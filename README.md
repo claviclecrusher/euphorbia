@@ -305,8 +305,10 @@ Developer Tools moved from `Ctrl+Shift+I` to `F12`.
 On startup the app checks the latest published GitHub release; **File → Check for
 Updates…** checks on demand. Drafts and pre-releases are ignored.
 
-- Windows installer and AppImage: the update downloads in the background, then the
-  app offers to restart. The Windows installer runs silently and keeps the existing
+- Windows installer and AppImage: at startup the update downloads in the
+  background, then the app offers to restart. **File → Check for Updates…** goes
+  all the way without asking: it downloads (progress on the taskbar icon), installs
+  and restarts the app. The Windows installer runs silently and keeps the existing
   install location.
 - Windows portable and `.deb`: the app shows a notification with a link to the
   releases page.

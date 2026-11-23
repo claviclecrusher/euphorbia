@@ -265,6 +265,45 @@
   const title = el('span', 'ol-chat-title', 'AI Chat');
   const model = el('select', 'ol-chat-model');
   model.title = 'Model';
+  // Switching to a paid model in a conversation that already has messages
+  // costs a full, uncached read on the next message: ask first. Runs before
+  // the other change listeners and lets them run only when the switch stands.
+  let modelValue = '';
+  let confirmingSwitch = false;
+  model.addEventListener('change', async (e) => {
+    if (confirmingSwitch) return;
+    const next = model.value;
+    const prev = modelValue;
+    if (!prev || next === prev || !messages.length || next.startsWith('local:')) {
+      modelValue = next;
+      return;
+    }
+    e.stopImmediatePropagation();
+    const info = await ai.switchCost({
+      projectId,
+      choiceId: next,
+      historyChars: messages.reduce((n, m) => n + String(m.content || '').length, 0),
+    });
+    if (info && info.paid) {
+      const tokens = info.tokens >= 1000 ? `${Math.round(info.tokens / 1000)}k` : String(info.tokens);
+      const cost = info.cost != null ? `, about $${info.cost < 0.01 ? '0.01 or less' : info.cost.toFixed(2)}` : '';
+      const ok = window.confirm(
+        `Switch to ${info.label}?\n\nThis conversation already has messages. A new model has no cache for them yet, ` +
+        `so your next message re-reads the instructions, the project index and the conversation in full ` +
+        `(about ${tokens} tokens${cost}). Later messages are cheaper again.\n\n` +
+        `To avoid this, start a new chat (+) with the new model.`
+      );
+      if (!ok) {
+        model.value = prev;
+        return;
+      }
+    }
+    modelValue = next;
+    // Let the regular handlers see the confirmed switch.
+    confirmingSwitch = true;
+    model.dispatchEvent(new Event('change'));
+    confirmingSwitch = false;
+  }, true);
   const reindex = el('button', 'ol-chat-icon', '↻');
   reindex.title = 'Re-read the project now';
   const history = el('button', 'ol-chat-icon', '\u2630');
@@ -403,6 +442,7 @@
     };
     showTitle();
     model.onchange = showTitle;
+    modelValue = model.value;
     updateSpend();
     return true;
   }

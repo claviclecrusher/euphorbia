@@ -1078,6 +1078,28 @@ function init(context) {
 
   // ---- from the editor
 
+  // What switching the chat to another model costs on its next message: the
+  // new model has no prompt cache yet, so it reads the instructions, the
+  // project index and the conversation in full (and writes them to its cache).
+  ipcMain.handle('ai:switch-cost', async (event, req) => {
+    if (!fromServer(event) || !req || !/^[0-9a-f]{24}$/.test(String(req.projectId))) return null;
+    const pick = choices().find((c) => c.id === req.choiceId);
+    if (!pick) return null;
+    if (pick.provider === 'local') return { paid: false };
+    let indexChars = 0;
+    try {
+      const p = projectIndex.stateFor(ctx.getConfig().current, String(req.projectId));
+      if (p.files.length) indexChars = projectIndex.workspace(p, null).index.length;
+    } catch {
+      /* no copy yet */
+    }
+    const historyChars = Math.min(Number(req.historyChars) || 0, 20000 + 4000); // recent part + summaries
+    const tokens = Math.ceil((chatPrompt().length + indexChars + historyChars) / 3.5);
+    const price = usage.priceOf(pick.model);
+    const cost = price ? (tokens * price[0] * 1.25) / 1e6 : null;
+    return { paid: true, model: pick.model, label: pick.label, tokens, cost };
+  });
+
   // This month's estimated spending, for the label next to the chat's model menu.
   ipcMain.handle('ai:usage', (event, provider) => {
     if (!fromServer(event)) return null;

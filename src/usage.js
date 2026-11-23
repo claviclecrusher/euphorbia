@@ -110,4 +110,4 @@ function summary(provider) {
   return out;
 }
 
-module.exports = { record, fromAnthropic, fromOpenAI, summary };
+module.exports = { record, fromAnthropic, fromOpenAI, summary, priceOf };
