@@ -1,27 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <!-- Euphorbia 'Sotetsukirin' (괴마옥), one colour: a stem covered in diamond
-       tubercles under a crown of long, narrow leaves. Details are cut out. -->
+       tubercles under a crown of short, narrow leaves. Details are cut out. -->
   <defs>
-    <pattern id="tub" width="100" height="70" patternUnits="userSpaceOnUse" x="12" y="6">
+    <pattern id="tub" width="100" height="70" patternUnits="userSpaceOnUse" x="12" y="20">
       <path d="M50 0 L100 35 L50 70 L0 35 Z" fill="none" stroke="#000" stroke-width="10" stroke-linejoin="round"/>
       <circle cx="50" cy="19" r="6" fill="#000"/><circle cx="0" cy="54" r="6" fill="#000"/><circle cx="100" cy="54" r="6" fill="#000"/>
     </pattern>
     <mask id="cut">
       <rect width="1024" height="1024" fill="#fff"/>
       <!-- tubercle grooves on the stem -->
-      <rect x="360" y="420" width="304" height="560" fill="url(#tub)"/>
+      <rect x="270" y="430" width="484" height="520" fill="url(#tub)"/>
     </mask>
   </defs>
+  <g transform="translate(512 512) scale(1.22) translate(-512 -580)">
   <g fill="#2f5d3a" mask="url(#cut)">
-    <!-- leaves: long and narrow, radiating and arching down at the sides -->
-    <path d="M498 420 C400 380 250 380 110 470 C250 400 390 410 504 404 Z"/>
-    <path d="M526 420 C624 380 774 380 914 470 C774 400 634 410 520 404 Z"/>
-    <path d="M496 410 C410 330 290 270 150 260 C300 240 430 300 516 396 Z"/>
-    <path d="M528 410 C614 330 734 270 874 260 C724 240 594 300 508 396 Z"/>
-    <path d="M500 404 C450 300 370 200 270 120 C390 160 480 270 524 392 Z"/>
-    <path d="M524 404 C574 300 654 200 754 120 C634 160 544 270 500 392 Z"/>
-    <path d="M512 400 C480 290 484 160 512 40 C540 160 544 290 512 400 Z"/>
-    <!-- stem: tall column, a little wider at the base -->
-    <path d="M410 440 C410 410 450 396 512 396 C574 396 614 410 614 440 C626 600 640 800 650 930 C650 960 620 976 512 976 C404 976 374 960 374 930 C384 800 398 600 410 440 Z"/>
+    <!-- leaves: narrow, radiating, short -->
+    <path d="M496 444 C420 414 330 414 236 446 C326 392 420 396 506 428 Z"/>
+    <path d="M528 444 C604 414 694 414 788 446 C698 392 604 396 518 428 Z"/>
+    <path d="M494 460 C430 410 350 380 270 380 C360 350 440 380 512 446 Z"/>
+    <path d="M530 460 C594 410 674 380 754 380 C664 350 584 380 512 446 Z"/>
+    <path d="M500 454 C462 390 410 330 350 280 C430 300 490 360 522 442 Z"/>
+    <path d="M524 454 C562 390 614 330 674 280 C594 300 534 360 502 442 Z"/>
+    <path d="M512 448 C488 380 490 300 512 230 C534 300 536 380 512 448 Z"/>
+    <!-- stem: short, round, barrel-like -->
+    <path d="M512 440 C660 440 740 520 740 680 C740 850 660 930 512 930 C364 930 284 850 284 680 C284 520 364 440 512 440 Z"/>
+  </g>
   </g>
 </svg>
