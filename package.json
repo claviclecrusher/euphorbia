@@ -3,6 +3,7 @@
   "productName": "Overleaf Desktop",
   "version": "0.1.0",
   "description": "Desktop client for a self-hosted Overleaf Community Edition server",
+  "homepage": "https://github.com/overleaf/overleaf",
   "main": "src/main.js",
   "license": "MIT",
   "author": "overleaf-desktop",

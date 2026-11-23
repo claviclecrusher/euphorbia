@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>서버 설정</title>
+<style>
+  body { font-family: system-ui, "Segoe UI", "Noto Sans KR", sans-serif; margin: 0; padding: 32px;
+         background: #f4f5f6; color: #1b222c; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { font-size: 13px; color: #495365; margin: 0 0 20px; line-height: 1.5; }
+  input { width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 14px;
+          border: 1px solid #afb5c0; border-radius: 6px; }
+  input:focus { outline: 2px solid #098842; border-color: transparent; }
+  button { margin-top: 16px; padding: 10px 20px; font-size: 14px; border: 0; border-radius: 20px;
+           background: #098842; color: #fff; cursor: pointer; }
+  button:disabled { background: #8bb89f; cursor: default; }
+  #msg { margin-top: 14px; font-size: 13px; min-height: 18px; color: #b83a33; }
+</style>
+</head>
+<body>
+  <h1>Overleaf 서버 주소</h1>
+  <p>접속할 Overleaf 서버의 주소를 입력하세요. 예: <code>http://192.168.50.108</code></p>
+  <form id="form">
+    <input id="url" type="text" placeholder="http://서버주소" autofocus spellcheck="false">
+    <button id="btn" type="submit">연결</button>
+  </form>
+  <div id="msg"></div>
+<script>
+  const url = document.getElementById('url');
+  const btn = document.getElementById('btn');
+  const msg = document.getElementById('msg');
+  window.setup.get().then((v) => { if (v) url.value = v; });
+  document.getElementById('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    btn.disabled = true;
+    msg.style.color = '#495365';
+    msg.textContent = '서버 확인 중…';
+    const res = await window.setup.save(url.value);
+    if (!res.ok) {
+      msg.style.color = '#b83a33';
+      msg.textContent = res.error;
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
