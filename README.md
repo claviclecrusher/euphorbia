@@ -145,6 +145,46 @@ the reason and a **Try again** button. Conversations are kept per project on
 this computer: **+** starts a new one, **☰** lists the earlier ones to reopen or
 delete. Each conversation is its own context; only its messages are sent.
 
+The model does not receive the whole project. It gets an index in which every
+`.tex` file is split into units (sections, subsections, `\\paragraph`s, text
+paragraphs, figures, tables, algorithms, equations, theorems), each with an id
+(`main.tex#12`), a line range and a one-line summary; `.bib` files are listed by
+their citation keys. It reads text through tools the app answers from a local copy
+of the project: `read_unit(id)`, `read_file(path, lines)`, `search(text)`,
+`expand(id)` (lists the units inside a file or unit when the index is shortened)
+and `read_history(id)`.
+
+**Summaries.** Set a *summary model* in AI Settings (a local model costs nothing).
+Summaries are written in the background when a project opens and every two
+minutes while it stays open, only for units whose text changed: each unit's
+summary is cached by a hash of its text, and a section's summary is built from its
+parts' summaries, so an edit re-summarizes that paragraph and the sections above
+it. Without a summary model the index shows each unit's first sentence. With a
+paid summary model, a first pass larger than the token limit waits for
+**Summarize** in the chat panel.
+
+**Long conversations.** The newest messages, up to about 20,000 characters, are
+sent as they are. Older ones are grouped into blocks of up to 8,000 characters and
+replaced by a short summary (summary model, cached); the model can reopen a block
+with `read_history`.
+
+**Token limit.** For Claude and OpenAI, a chat request that has used, or is about
+to use, more tokens than the limit in AI Settings (default 200,000) pauses and asks
+**Continue** or **Stop**. Local models are not limited.
+
+**Limits.** read_file returns up to 400 lines, read_unit up to 20,000 characters,
+search up to 40 matches; at most 8 lookup rounds per request; above 60,000
+characters the index lists sections only and `expand` opens the rest. Units are
+summarized from up to 8,000 characters of their text, 8 per call.
+
+The copy of the project (`files.json`), the summaries (`summaries.json`), older
+chat summaries (`history.json`) and a readable `index.md` are kept per project in
+the app's data folder under `ai-index/`.
+
+Conversations are kept per project on
+this computer: **+** starts a new one, **☰** lists the earlier ones to reopen or
+delete. Each conversation is its own context; only its messages are sent.
+
 The model does not receive the whole project. It gets an index: each file's
 sections with line ranges and first sentence, labels, `\input`s and citation keys.
 It reads what it needs with two tools, `read_file(path, start_line, end_line)` and

@@ -249,6 +249,7 @@
   const newChat = el('button', 'ol-chat-icon', '+');
   newChat.title = 'New chat';
   header.append(toggle, title, model, reindex, history, newChat);
+  const indexBar = el('div', 'ol-chat-index');
   const list = el('div', 'ol-chat-list');
   const status = el('div', 'ol-chat-status');
   const composer = el('div', 'ol-chat-composer');
@@ -258,7 +259,7 @@
   input.rows = 3;
   const send = el('button', 'ol-chat-send', 'Send');
   composer.append(refsRow, input, send);
-  panel.append(handle, header, list, status, composer);
+  panel.append(handle, header, indexBar, list, status, composer);
   for (const b of panel.querySelectorAll('button')) b.type = 'button';
 
   const HEIGHT_KEY = 'ol-desktop-chat-height';
@@ -367,6 +368,44 @@
       list.appendChild(row);
     }
   }
+
+  // Background index status from the app.
+  function renderIndex(st) {
+    indexBar.textContent = '';
+    indexBar.className = 'ol-chat-index';
+    if (!st || st.projectId !== projectId) return;
+    const units = st.units != null ? `${st.summarized}/${st.units} units summarized` : '';
+    if (st.state === 'summarizing') {
+      indexBar.textContent = `Indexing: ${st.done}/${st.total} with ${st.model}\u2026`;
+    } else if (st.state === 'ready') {
+      indexBar.textContent = `Index ready \u00b7 ${st.files} files \u00b7 ${units}`;
+    } else if (st.state === 'no-model') {
+      indexBar.textContent = `Index without summaries (${st.files} files). `;
+      const link = el('button', 'ol-chat-link', 'Choose a summary model');
+      link.type = 'button';
+      link.addEventListener('click', () => ai.openSettings());
+      indexBar.appendChild(link);
+    } else if (st.state === 'needs-approval') {
+      indexBar.classList.add('ask');
+      indexBar.append(
+        `Summarizing ${st.estimate.units} parts of this project with ${st.model} needs about ${Math.round(st.estimate.tokens / 1000)}k tokens. `
+      );
+      const yes = el('button', 'ol-chat-btn', 'Summarize');
+      const no = el('button', 'ol-chat-btn secondary', 'Not now');
+      yes.type = no.type = 'button';
+      yes.addEventListener('click', () => ai.indexApprove(projectId, true));
+      no.addEventListener('click', () => ai.indexApprove(projectId, false));
+      indexBar.append(yes, no);
+    } else if (st.state === 'declined') {
+      indexBar.textContent = `Summaries not made; the index shows first sentences. ${units}`;
+    } else if (st.state === 'error') {
+      indexBar.textContent = `Index: ${st.error}`;
+      indexBar.classList.add('error');
+    }
+  }
+  ai.onIndexStatus(renderIndex);
+  ai.projectOpen(projectId);
+  setInterval(() => ai.projectOpen(projectId), 2 * 60 * 1000);
 
   function setStatus(text, isError) {
     status.textContent = text || '';
@@ -557,6 +596,26 @@
       setStatus(ev.text + (ev.omitted ? ` (${ev.omitted} large file(s) given as outline only)` : ''));
     } else if (ev.type === 'notice') {
       setStatus(ev.text, true);
+    } else if (ev.type === 'usage') {
+      active.used = ev.used;
+    } else if (ev.type === 'pause') {
+      const ask = el('div', 'ol-chat-pause');
+      ask.append(
+        `This request has used ${Math.round(ev.used / 1000)}k tokens; the next step needs about ${Math.round(ev.next / 1000)}k more (limit ${Math.round(ev.limit / 1000)}k). `
+      );
+      const go = el('button', 'ol-chat-btn', 'Continue');
+      const stop = el('button', 'ol-chat-btn secondary', 'Stop');
+      go.type = stop.type = 'button';
+      const answer = (yes) => {
+        ask.remove();
+        ai.chatContinue(ev.id, yes);
+      };
+      go.addEventListener('click', () => answer(true));
+      stop.addEventListener('click', () => answer(false));
+      ask.append(go, stop);
+      active.el.appendChild(ask);
+      list.scrollTop = list.scrollHeight;
+      setStatus('Paused: waiting for your answer.');
     } else if (ev.type === 'delta') {
       active.text += ev.text;
       // Edit blocks are shown as cards once complete; while streaming, hide them.
@@ -686,6 +745,15 @@
     .ol-chat-edit-state.ok { color: #5fd38d; opacity: 1; }
     .ol-chat-edit-state.error { color: #ff8a80; opacity: 1; }
     .ol-chat-retry { font: inherit; font-size: 10px; color: inherit; background: rgba(255,255,255,.12); border: 0; border-radius: 8px; padding: 1px 6px; cursor: pointer; }
+    .ol-chat-index { flex: 0 0 auto; padding: 1px 8px 3px; font-size: 10px; opacity: .65; }
+    .ol-chat-index:empty { display: none; }
+    .ol-chat-index.ask { opacity: 1; font-size: 11px; background: rgba(255,193,7,.15); padding: 5px 8px; }
+    .ol-chat-index.error { color: #ff8a80; opacity: 1; }
+    .ol-chat-link { font: inherit; color: #7cc4ff; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+    .ol-chat-btn { font: inherit; font-size: 11px; border: 0; border-radius: 10px; padding: 2px 10px; margin: 3px 4px 0 0; background: #098842; color: #fff; cursor: pointer; }
+    .ol-chat-btn.secondary { background: rgba(255,255,255,.18); }
+    .ol-chat-pause { margin-top: 6px; padding: 6px; border-radius: 4px; background: rgba(255,193,7,.15); font-size: 11px; }
+    .ol-chat.collapsed .ol-chat-index { display: none; }
     .ol-chat-status { flex: 0 0 auto; padding: 2px 8px; font-size: 11px; opacity: .7; }
     .ol-chat-status:empty { display: none; }
     .ol-chat-status.error { color: #ff8a80; opacity: 1; }

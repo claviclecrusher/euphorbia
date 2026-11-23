@@ -67,6 +67,16 @@
     <div class="tools"><button data-a="fetch" type="button">Fetch model list</button><button data-a="test" type="button">Save &amp; Test</button><span class="out" data-k="out"></span></div>
   </fieldset>
 
+  <fieldset>
+    <legend>Chat index and limits</legend>
+    <label class="f" for="summary">Summary model (writes the one-line summaries in the project index and of older chat messages)</label>
+    <select id="summary" style="width:100%;padding:6px;font-size:13px;border:1px solid #afb5c0;border-radius:6px"></select>
+    <div class="note">Runs in the background for every part of a project that changed. A local model costs nothing. Without one, the index shows each part's first sentence.</div>
+    <label class="f" for="limit">Token limit per chat request (paid APIs)</label>
+    <input id="limit" type="text" spellcheck="false" placeholder="200000">
+    <div class="note">A request that would go over this pauses and asks whether to continue. A first summary pass over this size asks too.</div>
+  </fieldset>
+
   <div class="note" id="enc"></div>
   <div class="actions">
     <span class="spacer"></span>
@@ -89,12 +99,18 @@
       if (p === 'local') el(p, 'baseURL').value = s[p].baseURL || '';
       clear[p] = false;
     }
+    const sel = document.getElementById('summary');
+    sel.textContent = '';
+    sel.add(new Option('(none: first sentence of each part)', ''));
+    for (const c of s.choices || []) sel.add(new Option(c.label, c.id, false, c.id === s.summary));
+    if (s.summary && !(s.choices || []).some((c) => c.id === s.summary)) sel.add(new Option(`${s.summary} (not available)`, s.summary, false, true));
+    document.getElementById('limit').value = s.tokenLimit;
     document.getElementById('enc').textContent = s.encrypted ? 'Keys are encrypted with the system keychain.'
       : 'No system keychain is available: keys are stored unencrypted in the app settings file.';
   }
 
   function form() {
-    const f = {};
+    const f = { summary: document.getElementById('summary').value, tokenLimit: document.getElementById('limit').value };
     for (const p of P) {
       f[p] = { models: el(p, 'models').value, key: el(p, 'key').value, clearKey: clear[p] };
       if (p === 'local') f[p].baseURL = el(p, 'baseURL').value;
