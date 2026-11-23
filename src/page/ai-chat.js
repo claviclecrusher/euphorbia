@@ -222,6 +222,9 @@
     }
   });
 
+  // File navigation for the edit review buttons in the editor.
+  window.__olDesktopNav = { openPath, currentPath };
+
   if (PANE !== 1) return; // the bottom split pane only forwards Ctrl+L
   ai.onRef(addRef);
 
@@ -258,7 +261,26 @@
   input.placeholder = 'Ask about the project or request a change. Ctrl+L adds the selected lines.';
   input.rows = 3;
   const send = el('button', 'ol-chat-send', 'Send');
-  composer.append(refsRow, input, send);
+  // Write: the model may change the files. Read-only: it only reads and answers.
+  const MODE_KEY = 'ol-desktop-chat-mode';
+  let mode = localStorage.getItem(MODE_KEY) === 'read' ? 'read' : 'write';
+  const modeBtn = el('button', 'ol-chat-mode');
+  const showMode = () => {
+    modeBtn.textContent = mode === 'write' ? '\u270e Write' : '\u{1F441} Read-only';
+    modeBtn.title = mode === 'write'
+      ? 'Write mode: the AI may edit the files (as edits to accept or reject). Click for read-only.'
+      : 'Read-only mode: the AI reads and answers but does not edit. Click for write mode.';
+    modeBtn.classList.toggle('read', mode === 'read');
+  };
+  modeBtn.addEventListener('click', () => {
+    mode = mode === 'write' ? 'read' : 'write';
+    localStorage.setItem(MODE_KEY, mode);
+    showMode();
+  });
+  showMode();
+  const actions = el('div', 'ol-chat-actions');
+  actions.append(modeBtn, send);
+  composer.append(refsRow, input, actions);
   panel.append(handle, header, indexBar, list, status, composer);
   for (const b of panel.querySelectorAll('button')) b.type = 'button';
 
@@ -535,6 +557,7 @@
     send.textContent = busy ? 'Stop' : 'Send';
     send.classList.toggle('stop', busy);
     model.disabled = busy;
+    modeBtn.disabled = busy;
     newChat.disabled = busy;
     history.disabled = busy;
   }
@@ -557,7 +580,7 @@
       messages = conv.messages;
     }
     showingList = false;
-    messages.push({ role: 'user', content: text, refs: pendingRefs.slice() });
+    messages.push({ role: 'user', content: text, refs: pendingRefs.slice(), mode });
     pendingRefs = [];
     input.value = '';
     renderRefs();
@@ -570,13 +593,14 @@
     bubble.appendChild(body);
     list.appendChild(bubble);
     list.scrollTop = list.scrollHeight;
-    active = { id, el: bubble, body, text: '', conv: currentId };
+    active = { id, el: bubble, body, text: '', conv: currentId, mode };
     setBusy(true);
     ai.chatStart({
       requestId: id,
       choiceId: model.value,
       projectId,
-      history: messages.map((mm) => ({ role: mm.role, content: mm.content, refs: mm.refs })),
+      history: messages.map((mm) => ({ role: mm.role, content: mm.content, refs: mm.refs, mode: mm.mode })),
+      mode,
       openDoc: v ? { path: currentPath(), text: v.state.doc.toString() } : null,
     });
   }
@@ -630,7 +654,7 @@
       setStatus(ev.text, true);
       render();
     } else if (ev.type === 'done') {
-      const msg = { role: 'assistant', content: ev.text, by: ev.by, edits: [] };
+      const msg = { role: 'assistant', content: ev.text, by: ev.by, edits: [], mode: active.mode };
       const conv = convs.find((c) => c.id === active.conv);
       if (conv) conv.messages.push(msg);
       active = null;
@@ -658,6 +682,13 @@
   async function applyEdits(msg) {
     const { edits } = parseEdits(msg.content);
     if (!edits.length) return;
+    if (msg.mode === 'read') {
+      // Read-only: never touch the files, even if the model wrote edits anyway.
+      msg.edits = edits.map(() => ({ ok: false, error: 'not applied (read-only mode)' }));
+      save();
+      render();
+      return;
+    }
     const back = currentPath();
     setStatus(`Adding ${edits.length} edit(s) to the files…`);
     msg.edits = edits.map(() => ({ by: msg.by }));
@@ -762,7 +793,11 @@
     .ol-chat-input { width: 100%; box-sizing: border-box; resize: none; font: inherit; color: #1b222c; background: #fff;
       border: 1px solid transparent; border-radius: 6px; padding: 5px 7px; }
     .ol-chat-input:focus { outline: none; border-color: #098842; }
-    .ol-chat-send { align-self: flex-end; font: inherit; border: 0; border-radius: 14px; padding: 3px 14px; background: #098842; color: #fff; cursor: pointer; }
+    .ol-chat-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+    .ol-chat-mode { font: inherit; font-size: 11px; color: inherit; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2);
+      border-radius: 14px; padding: 2px 10px; cursor: pointer; white-space: nowrap; }
+    .ol-chat-mode.read { background: rgba(15,111,197,.35); border-color: rgba(15,111,197,.7); }
+    .ol-chat-send { font: inherit; border: 0; border-radius: 14px; padding: 3px 14px; background: #098842; color: #fff; cursor: pointer; }
     .ol-chat-send.stop { background: #b83a33; }
     .ol-chat button:disabled, .ol-chat select:disabled { opacity: .4; cursor: default; }
   `;

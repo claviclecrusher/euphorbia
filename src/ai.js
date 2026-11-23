@@ -65,6 +65,11 @@ Rules for edits:
 - Before the edit blocks, say in one or two sentences what you are changing. The user reviews
   every edit and accepts or rejects it.
 
+Each user message starts with its mode:
+- [Mode: write] you may change the project with edit blocks as described above.
+- [Mode: read-only] do not write any edit blocks; read what you need and answer only. If the user
+  asks for a change, describe it in words (or show the new text) and say they can switch to write mode.
+
 Passages the user points at are given as references with their file and line numbers.
 Older parts of a long conversation are shown summarized; read_history opens them.
 Answer in the language the user writes in.`;
@@ -297,6 +302,7 @@ function chatMessages(history) {
     if (role === 'user') {
       const refs = refsText(m.refs);
       if (refs) content = `${refs}\n\n${content}`;
+      content = `[Mode: ${m.mode === 'read' ? 'read-only' : 'write'}]\n${content}`;
     }
     if (!content.trim()) continue;
     if (out.length && out[out.length - 1].role === role) out[out.length - 1].content += `\n\n${content}`;
@@ -921,6 +927,21 @@ function init(context) {
     } else {
       job.status = { ...job.status, state: 'declined' };
       pushStatus(job);
+    }
+  });
+
+  // Edit blocks per file, for the review counter (n/N) in the editor.
+  ipcMain.handle('ai:list-edits', async (event, projectId) => {
+    if (!fromServer(event) || !/^[0-9a-f]{24}$/.test(String(projectId))) return { ok: false };
+    try {
+      const p = projectIndex.stateFor(ctx.getConfig().current, String(projectId));
+      await projectIndex.refresh(p, { maxAge: 15000 });
+      const files = p.files
+        .map((f) => ({ path: f.path, count: (f.text.match(/^\s*%%edit:begin\b/gm) || []).length }))
+        .filter((f) => f.count > 0);
+      return { ok: true, files };
+    } catch (err) {
+      return { ok: false, error: friendly(err) };
     }
   });
 
