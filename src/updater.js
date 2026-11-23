@@ -3,7 +3,7 @@
 const { app, dialog, shell, BrowserWindow } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
-const RELEASES_URL = 'https://github.com/claviclecrusher/overleaf-desktop/releases/latest';
+const RELEASES_URL = 'https://github.com/claviclecrusher/euphorbia/releases/latest';
 
 // Installed NSIS builds and AppImages can replace themselves. Portable exes and
 // .deb installs cannot, so they only get a notification with a download link.
