@@ -59,11 +59,11 @@ function cliServer() {
 
 function normalizeServerUrl(input) {
   let s = String(input || '').trim();
-  if (!s) throw new Error('주소를 입력하세요.');
+  if (!s) throw new Error('Enter a server address.');
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) s = 'http://' + s;
   const u = new URL(s);
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
-    throw new Error('http 또는 https 주소만 사용할 수 있습니다.');
+    throw new Error('Only http and https addresses are supported.');
   }
   return u.origin + u.pathname.replace(/\/+$/, '');
 }
@@ -115,6 +115,16 @@ function isAuthPage(url) {
   }
 }
 
+let allowGoogleOnce = false;
+
+function isGoogleSignIn(url) {
+  try {
+    return new URL(url).hostname === 'accounts.google.com';
+  } catch {
+    return false;
+  }
+}
+
 function isWebUrl(url) {
   try {
     const { protocol } = new URL(url);
@@ -142,10 +152,10 @@ async function probeServer(url, timeoutMs = 10000) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await net.fetch(url + '/login', { signal: controller.signal, redirect: 'follow' });
-    if (!res.ok) throw new Error(`서버 응답 오류 (HTTP ${res.status})`);
+    if (!res.ok) throw new Error(`The server answered with an error (HTTP ${res.status}).`);
     const body = await res.text();
     if (!/ol-|overleaf|sharelatex/i.test(body)) {
-      throw new Error('Overleaf 서버가 아닌 것 같습니다.');
+      throw new Error('This does not look like an Overleaf server.');
     }
     try {
       const finalUrl = new URL(res.url);
@@ -158,8 +168,8 @@ async function probeServer(url, timeoutMs = 10000) {
     }
     return url;
   } catch (err) {
-    if (err.name === 'AbortError') throw new Error('서버 응답 시간이 초과되었습니다.');
-    if (/^net::/.test(err.message || '')) throw new Error(`서버에 연결할 수 없습니다. (${err.message})`);
+    if (err.name === 'AbortError') throw new Error('The server took too long to respond.');
+    if (/^net::/.test(err.message || '')) throw new Error(`Could not connect to the server. (${err.message})`);
     throw err;
   } finally {
     clearTimeout(timer);
@@ -213,6 +223,31 @@ function attachCommonHandlers(win) {
     openExternal(url);
   });
 
+  // Google rejects sign-in from embedded browsers, and a session created in the
+  // system browser cannot be handed to the app. Explain instead of letting the
+  // user run into Google's "this browser may not be secure" page.
+  wc.on('will-redirect', async (event, url, _inPlace, isMainFrame) => {
+    if (!isMainFrame || allowGoogleOnce || !isGoogleSignIn(url) || !isServerUrl(wc.getURL())) return;
+    event.preventDefault();
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'info',
+      message: 'Google sign-in does not work inside desktop apps',
+      detail:
+        'Google blocks sign-in from embedded browsers. Set a password for your Overleaf account ' +
+        '("Forgot your password?" on the login page sends a link), then sign in here with your ' +
+        'email and password.',
+      buttons: ['Set a Password in Browser', 'Try Google Anyway', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+    });
+    if (response === 0) openExternal(config.current + '/user/password/reset');
+    else if (response === 1) {
+      allowGoogleOnce = true;
+      setTimeout(() => (allowGoogleOnce = false), 5000);
+      wc.loadURL(url).catch(() => {});
+    }
+  });
+
   wc.on('context-menu', (_e, params) => {
     const items = [];
     for (const word of params.dictionarySuggestions || []) {
@@ -221,23 +256,23 @@ function attachCommonHandlers(win) {
     if (items.length) items.push({ type: 'separator' });
     if (params.linkURL) {
       items.push(
-        { label: '링크를 브라우저에서 열기', click: () => openExternal(params.linkURL) },
-        { label: '링크 주소 복사', click: () => clipboard.writeText(params.linkURL) },
+        { label: 'Open Link in Browser', click: () => openExternal(params.linkURL) },
+        { label: 'Copy Link Address', click: () => clipboard.writeText(params.linkURL) },
         { type: 'separator' }
       );
     }
     if (params.isEditable) {
       items.push(
-        { label: '실행 취소', role: 'undo' },
-        { label: '다시 실행', role: 'redo' },
+        { label: 'Undo', role: 'undo' },
+        { label: 'Redo', role: 'redo' },
         { type: 'separator' },
-        { label: '잘라내기', role: 'cut', enabled: params.editFlags.canCut },
-        { label: '복사', role: 'copy', enabled: params.editFlags.canCopy },
-        { label: '붙여넣기', role: 'paste', enabled: params.editFlags.canPaste },
-        { label: '모두 선택', role: 'selectAll' }
+        { label: 'Cut', role: 'cut', enabled: params.editFlags.canCut },
+        { label: 'Copy', role: 'copy', enabled: params.editFlags.canCopy },
+        { label: 'Paste', role: 'paste', enabled: params.editFlags.canPaste },
+        { label: 'Select All', role: 'selectAll' }
       );
     } else if (params.selectionText) {
-      items.push({ label: '복사', role: 'copy' });
+      items.push({ label: 'Copy', role: 'copy' });
     }
     if (!items.length) return;
     Menu.buildFromTemplate(items).popup({ window: win });
@@ -281,21 +316,21 @@ function createMainWindow() {
       if (!win) return;
       win.show();
       const others = config.servers.filter((s) => s.url !== config.current);
-      const buttons = ['다시 시도', '서버 추가…', '종료'];
-      if (others.length) buttons.splice(1, 0, `${others[0].name}(으)로 전환`);
+      const buttons = ['Retry', 'Add Server…', 'Quit'];
+      if (others.length) buttons.splice(1, 0, `Switch to ${others[0].name}`);
       const { response } = await dialog.showMessageBox(win, {
         type: 'error',
-        title: '연결 실패',
-        message: '서버에 연결할 수 없습니다.',
+        title: 'Connection Failed',
+        message: 'Could not connect to the server.',
         detail: `${validatedURL}\n${errorDescription} (${errorCode})`,
         buttons,
         defaultId: 0,
         cancelId: buttons.length - 1,
       });
       const choice = buttons[response];
-      if (choice === '다시 시도') loadServer();
-      else if (choice === '서버 추가…') showSetup();
-      else if (choice === '종료') app.quit();
+      if (choice === 'Retry') loadServer();
+      else if (choice === 'Add Server…') showSetup();
+      else if (choice === 'Quit') app.quit();
       else switchServer(others[0].url);
     }
   );
@@ -328,9 +363,9 @@ async function removeCurrentServer() {
   if (!server || !mainWindow) return;
   const { response } = await dialog.showMessageBox(mainWindow, {
     type: 'question',
-    message: `"${server.name}" 서버를 목록에서 지울까요?`,
-    detail: `${server.url}\n서버의 프로젝트에는 영향이 없습니다.`,
-    buttons: ['지우기', '취소'],
+    message: `Remove "${server.name}" from the server list?`,
+    detail: `${server.url}\nProjects on the server are not affected.`,
+    buttons: ['Remove', 'Cancel'],
     cancelId: 1,
   });
   if (response !== 0) return;
@@ -361,7 +396,7 @@ function showSetup() {
     maximizable: false,
     parent: mainWindow || undefined,
     modal: !!mainWindow,
-    title: '서버 추가',
+    title: 'Add Server',
     autoHideMenuBar: true,
     webPreferences: { ...webPreferences, preload: path.join(__dirname, 'setup-preload.js') },
   });
@@ -427,17 +462,17 @@ function buildMenu() {
   }));
   const template = [
     {
-      label: '파일',
+      label: 'File',
       submenu: [
-        { label: '프로젝트 목록', accelerator: 'CmdOrCtrl+Shift+H', click: loadServer },
+        { label: 'Projects', accelerator: 'CmdOrCtrl+Shift+H', click: loadServer },
         {
-          label: '이 서버의 로그인 정보 지우기',
+          label: 'Clear Sign-in Data for This Server',
           enabled: !!config.current,
           click: async () => {
             const { response } = await dialog.showMessageBox(mainWindow, {
               type: 'question',
-              message: '현재 서버에 저장된 로그인 정보(쿠키)를 지울까요?',
-              buttons: ['지우기', '취소'],
+              message: 'Clear the saved sign-in data (cookies) for the current server?',
+              buttons: ['Clear', 'Cancel'],
               cancelId: 1,
             });
             if (response === 0) {
@@ -447,51 +482,51 @@ function buildMenu() {
           },
         },
         { type: 'separator' },
-        { label: `업데이트 확인… (현재 ${app.getVersion()})`, click: () => updater.check(true) },
+        { label: `Check for Updates… (v${app.getVersion()})`, click: () => updater.check(true) },
         { type: 'separator' },
-        { label: '종료', role: 'quit' },
+        { label: 'Quit', role: 'quit' },
       ],
     },
     {
-      label: '서버',
+      label: 'Server',
       submenu: [
         ...serverItems,
         ...(serverItems.length ? [{ type: 'separator' }] : []),
-        { label: '서버 추가…', click: showSetup },
-        { label: '현재 서버 삭제…', enabled: !!config.current, click: removeCurrentServer },
+        { label: 'Add Server…', click: showSetup },
+        { label: 'Remove Current Server…', enabled: !!config.current, click: removeCurrentServer },
       ],
     },
     {
-      label: '편집',
+      label: 'Edit',
       submenu: [
-        { label: '실행 취소', role: 'undo' },
-        { label: '다시 실행', role: 'redo' },
+        { label: 'Undo', role: 'undo' },
+        { label: 'Redo', role: 'redo' },
         { type: 'separator' },
-        { label: '잘라내기', role: 'cut' },
-        { label: '복사', role: 'copy' },
-        { label: '붙여넣기', role: 'paste' },
-        { label: '모두 선택', role: 'selectAll' },
+        { label: 'Cut', role: 'cut' },
+        { label: 'Copy', role: 'copy' },
+        { label: 'Paste', role: 'paste' },
+        { label: 'Select All', role: 'selectAll' },
       ],
     },
     {
-      label: '보기',
+      label: 'View',
       submenu: [
-        { label: '새로 고침', accelerator: 'F5', click: () => focused()?.webContents.reload() },
+        { label: 'Reload', accelerator: 'F5', click: () => focused()?.webContents.reload() },
         {
-          label: '강력 새로 고침',
+          label: 'Force Reload',
           accelerator: 'Shift+F5',
           click: () => focused()?.webContents.reloadIgnoringCache(),
         },
         { type: 'separator' },
-        { label: '뒤로', accelerator: 'Alt+Left', click: () => focused()?.webContents.goBack() },
-        { label: '앞으로', accelerator: 'Alt+Right', click: () => focused()?.webContents.goForward() },
+        { label: 'Back', accelerator: 'Alt+Left', click: () => focused()?.webContents.goBack() },
+        { label: 'Forward', accelerator: 'Alt+Right', click: () => focused()?.webContents.goForward() },
         { type: 'separator' },
-        { label: '확대', role: 'zoomIn', accelerator: 'CmdOrCtrl+=' },
-        { label: '축소', role: 'zoomOut' },
-        { label: '원래 크기', role: 'resetZoom' },
+        { label: 'Zoom In', role: 'zoomIn', accelerator: 'CmdOrCtrl+=' },
+        { label: 'Zoom Out', role: 'zoomOut' },
+        { label: 'Actual Size', role: 'resetZoom' },
         { type: 'separator' },
-        { label: '전체 화면', role: 'togglefullscreen' },
-        { label: '개발자 도구', role: 'toggleDevTools' },
+        { label: 'Toggle Full Screen', role: 'togglefullscreen' },
+        { label: 'Developer Tools', role: 'toggleDevTools' },
       ],
     },
   ];
