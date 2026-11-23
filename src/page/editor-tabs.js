@@ -475,10 +475,14 @@
     const h = editor && editor.parentElement;
     const panel = h && h.parentElement;
     if (!panel) return;
-    if (strip.parentElement === panel && strip.nextElementSibling === h &&
+    // The chat's search bar may sit between the strip and the editor.
+    const after = strip.nextElementSibling;
+    const placed = after === h || (after && after.classList.contains('ol-searched-bar') && after.nextElementSibling === h);
+    if (strip.parentElement === panel && placed &&
         (PANE !== 1 || (slot.parentElement === panel && h.nextElementSibling === divider))) return;
     holder = h;
-    panel.insertBefore(strip, h);
+    const bar = h.previousElementSibling && h.previousElementSibling.classList.contains('ol-searched-bar') ? h.previousElementSibling : null;
+    panel.insertBefore(strip, bar || h);
     panel.classList.add('ol-desktop-tabs-host');
     h.classList.add('ol-desktop-tabs-editor');
     if (PANE === 1) {
