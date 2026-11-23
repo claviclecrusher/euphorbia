@@ -176,20 +176,45 @@ async function probeServer(url, timeoutMs = 10000) {
 
 // Only email and password sign-in works inside the app, so the buttons for
 // Google, ORCID, institutional SSO and the "OR" divider next to them are hidden.
-// Overleaf's loading screen shows its logo filling up as the project loads
-// (a grey copy with a coloured copy rising over it). Show the app's icon instead.
+// The app's icons in Overleaf's pages: the full icon on the project loading
+// screen (a grey copy with a coloured copy rising over it as the project loads),
+// the round icon on the editor's home button (top left).
 const BRAND_CSS = (() => {
   try {
     const svg = fs.readFileSync(path.join(__dirname, 'icon.svg'), 'utf8');
+    const round = fs.readFileSync(path.join(__dirname, 'icon-small.svg'), 'utf8');
     const url = (text) => `url("data:image/svg+xml;base64,${Buffer.from(text).toString('base64')}")`;
     return `
       .loading-screen .loading-screen-brand { background-image: ${url(svg.replace(/#2f5d3a/g, '#c5cbc3'))} !important; padding-top: 100% !important; }
       .loading-screen .loading-screen-brand::after { background-image: ${url(svg)} !important; }
+      .ide-redesign-toolbar .toolbar-ol-logo { background-image: ${url(round.replace(/#2f5d3a/g, "#4fa35e"))} !important; }
     `;
   } catch {
     return '';
   }
 })();
+
+// The same CSS added from the preload, before the page is parsed: the loading
+// screen is in the server's HTML, so CSS added at dom-ready came after its
+// first paint (Overleaf's logo flashed before the app's).
+const BRAND_EARLY = `(() => {
+  const css = ${JSON.stringify(BRAND_CSS)};
+  const add = () => {
+    if (document.getElementById('euphorbia-brand')) return true;
+    const root = document.head || document.documentElement;
+    if (!root) return false;
+    const style = document.createElement('style');
+    style.id = 'euphorbia-brand';
+    style.textContent = css;
+    root.appendChild(style);
+    return true;
+  };
+  if (css && !add()) {
+    const mo = new MutationObserver(() => { if (add()) mo.disconnect(); });
+    mo.observe(document, { childList: true, subtree: true });
+  }
+})();
+`;
 
 const HIDE_SSO_CSS = `
   .form-group:has(> a.btn img.btn-social-icon),
@@ -430,7 +455,7 @@ const EARLY_PAGE_SCRIPT = ['candidates.js', 'shortcut-help.js', 'editor-tabs.js'
   .join('\n;\n');
 
 ipcMain.on('page:early-script', (event) => {
-  event.returnValue = `window.__olDesktopPane = ${split.roleOf(event.sender)};\n` + EARLY_PAGE_SCRIPT;
+  event.returnValue = `window.__olDesktopPane = ${split.roleOf(event.sender)};\n` + BRAND_EARLY + EARLY_PAGE_SCRIPT;
 });
 
 function fromSetup(event) {
