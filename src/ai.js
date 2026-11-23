@@ -1205,6 +1205,7 @@ function showSettings() {
   }
   const parent = ctx.getMainWindow();
   settingsWindow = new BrowserWindow({
+    icon: require('path').join(__dirname, 'icon.png'),
     width: 600,
     height: 880,
     minHeight: 500,

@@ -1,4 +1,8 @@
-# Overleaf Desktop
+# Euphorbia
+
+<img src="build/icon.svg" width="96" alt="Euphorbia icon: a Sotetsukirin in a pot">
+
+*Euphorbia is an unofficial project. It is not affiliated with, endorsed by or sponsored by Overleaf or Digital Science; "Overleaf" is used only to name the servers it connects to.*
 
 An Electron desktop client for Overleaf servers: a self-hosted Community Edition
 instance, overleaf.com, or both. Compiling and project storage stay on the server,
@@ -10,10 +14,10 @@ Download an installer from the [latest release](https://github.com/claviclecrush
 
 | Platform | File | Updates |
 |---|---|---|
-| Windows | `overleaf-desktop-setup-<version>.exe` | automatic |
-| Windows, no install | `overleaf-desktop-portable-<version>.exe` | notification only |
-| Linux | `overleaf-desktop-<version>.AppImage` | automatic |
-| Debian/Ubuntu | `overleaf-desktop_<version>_amd64.deb` | notification only |
+| Windows | `euphorbia-setup-<version>.exe` | automatic |
+| Windows, no install | `euphorbia-portable-<version>.exe` | notification only |
+| Linux | `euphorbia-<version>.AppImage` | automatic |
+| Debian/Ubuntu | `euphorbia_<version>_amd64.deb` | notification only |
 
 The Windows executables are not code-signed, so SmartScreen warns on first run:
 choose **More info → Run anyway**.
@@ -55,7 +59,7 @@ The copy contains the project's files. History, comments, tracked changes and
 collaborators are not copied, and the target server's upload size limit applies.
 
 The server list and window position are stored in `config.json` in the user data
-folder (`~/.config/Overleaf Desktop/` on Linux, `%APPDATA%\Overleaf Desktop\` on
+folder (`~/.config/Euphorbia/` on Linux, `%APPDATA%\Euphorbia\` on
 Windows).
 
 ## Editor tabs
@@ -352,3 +356,13 @@ next to the installers, or the updater cannot find the new version.
 - On Ubuntu 24.04 and later the AppImage may not start without `--no-sandbox`
   because AppArmor restricts user namespaces, and it needs `libfuse2`. The `.deb`
   sets up the sandbox correctly.
+
+## License
+
+Euphorbia is free software: you can redistribute it and/or modify it under the
+terms of the GNU Affero General Public License, version 3, as published by the
+Free Software Foundation. See [`LICENSE`](LICENSE). It contains no Overleaf code;
+Overleaf Community Edition is also licensed under the AGPL-3.0.
+
+The app was called *Overleaf Desktop* before version 0.21. Updating keeps your
+settings: the old data folder is moved to the new name on first start.

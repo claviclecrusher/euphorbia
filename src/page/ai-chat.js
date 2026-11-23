@@ -238,7 +238,7 @@
         )
       );
     } catch (err) {
-      console.error('[overleaf-desktop] chat shortcut failed to load', err);
+      console.error('[euphorbia] chat shortcut failed to load', err);
     }
   });
 

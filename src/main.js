@@ -13,6 +13,27 @@ const ai = require('./ai');
 // config.servers: [{ name, url }]   saved servers
 // config.current: url               the one the main window shows
 
+// The app was called "Overleaf Desktop" before 0.21: move its data folder
+// (servers, AI settings, conversations, index) to the new name once.
+(() => {
+  try {
+    const now = app.getPath('userData');
+    const old = path.join(app.getPath('appData'), 'Overleaf Desktop');
+    if (fs.existsSync(old) && !fs.existsSync(path.join(now, 'config.json'))) {
+      try {
+        if (fs.existsSync(now)) fs.rmSync(now, { recursive: true, force: true });
+        fs.renameSync(old, now);
+      } catch {
+        app.setPath('userData', old); // in use or not movable: keep using it
+      }
+    }
+  } catch {
+    /* first run */
+  }
+})();
+
+const APP_ICON = path.join(__dirname, 'icon.png');
+
 const configPath = () => path.join(app.getPath('userData'), 'config.json');
 
 function loadConfig() {
@@ -257,7 +278,8 @@ function createMainWindow() {
     y: b.y,
     minWidth: 700,
     minHeight: 500,
-    title: 'Overleaf Desktop',
+    title: 'Euphorbia',
+    icon: APP_ICON,
     backgroundColor: '#ffffff',
     show: false,
     webPreferences,
@@ -359,6 +381,7 @@ function showSetup() {
     return;
   }
   setupWindow = new BrowserWindow({
+    icon: APP_ICON,
     width: 520,
     height: 440,
     resizable: false,
@@ -551,7 +574,7 @@ if (!app.requestSingleInstanceLock()) {
   // Present as plain Chrome. Google sign-in and reCAPTCHA reject user agents
   // that advertise an embedded browser.
   app.userAgentFallback = app.userAgentFallback
-    .replace(/\s(Electron|overleaf-desktop|OverleafDesktop)\/\S+/gi, '');
+    .replace(/\s(Electron|euphorbia|Euphorbia|overleaf-desktop|OverleafDesktop)\/\S+/gi, '');
 
   app.on('second-instance', () => {
     const win = mainWindow || setupWindow;

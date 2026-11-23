@@ -47,5 +47,5 @@ try {
   const script = ipcRenderer.sendSync('page:early-script');
   if (script) webFrame.executeJavaScript(script);
 } catch (err) {
-  console.error('[overleaf-desktop] early script failed', err);
+  console.error('[euphorbia] early script failed', err);
 }
