@@ -18,6 +18,7 @@ const usage = require('./usage');
 const { DEFAULT_STYLE } = require('./writing-style');
 
 const PROVIDERS = ['claude', 'openai', 'local'];
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const PROVIDER_NAME = { claude: 'Claude', openai: 'OpenAI', local: 'Local' };
 const DEFAULTS = {
   claude: { models: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'] },
@@ -128,6 +129,7 @@ function settings() {
   }
   out.summary = typeof s.summary === 'string' ? s.summary : '';
   out.styleEnabled = s.styleEnabled !== false;
+  out.effort = EFFORTS.includes(s.effort) ? s.effort : 'low';
   out.style = typeof s.style === 'string' && s.style.trim() ? s.style : DEFAULT_STYLE;
   out.embedding = s.embedding && typeof s.embedding === 'object'
     ? { provider: String(s.embedding.provider || ''), model: String(s.embedding.model || '') }
@@ -165,7 +167,7 @@ function publicSettings() {
   const s = settings();
   const out = {
     encrypted: safeStorage.isEncryptionAvailable(), summary: s.summary, tokenLimit: s.tokenLimit, embedding: s.embedding, choices: choices(s),
-    styleEnabled: s.styleEnabled, style: s.style, defaultStyle: DEFAULT_STYLE,
+    styleEnabled: s.styleEnabled, style: s.style, defaultStyle: DEFAULT_STYLE, effort: s.effort,
   };
   for (const p of PROVIDERS) {
     out[p] = { models: s[p].models, hasKey: !!openKey(s[p].key), ...(p === 'local' ? { baseURL: s[p].baseURL } : {}) };
@@ -182,6 +184,7 @@ function applyForm(form) {
   delete next.provider;
   if (form && typeof form.summary === 'string') next.summary = str(form.summary, 300);
   if (form && typeof form.styleEnabled === 'boolean') next.styleEnabled = form.styleEnabled;
+  if (form && EFFORTS.includes(form.effort)) next.effort = form.effort;
   if (form && typeof form.style === 'string') {
     const st = form.style.replace(/\r\n/g, '\n').slice(0, 20000);
     // The default is stored as '' so that later improvements to it reach the user.
@@ -251,6 +254,17 @@ function openaiClient(s, provider) {
   return new OpenAI({ apiKey: key || 'local', ...(provider === 'local' ? { baseURL: entry.baseURL } : {}) });
 }
 
+// Claude effort from AI Settings (default low) for models that take it. Opus 4.5
+// accepts only low/medium/high.
+const effortSupported = (model) => /^claude-(fable|mythos|opus-5|opus-4-[5-8]|sonnet-5|sonnet-4-6|haiku-5)/.test(model);
+function withEffort(model, params) {
+  if (!effortSupported(model)) return params;
+  let effort = settings().effort;
+  if (/^claude-opus-4-5/.test(model) && (effort === 'xhigh' || effort === 'max')) effort = 'high';
+  params.output_config = { ...(params.output_config || {}), effort };
+  return params;
+}
+
 function withFallbacks(model, params) {
   if (FALLBACK_MODELS.has(model)) {
     // A policy decline is re-run on a fallback model inside the same call.
@@ -293,7 +307,7 @@ async function complete(pick, system, messages, signal) {
   if (pick.provider === 'claude') {
     const client = anthropicClient(pick.s);
     const response = await client.beta.messages.create(
-      withFallbacks(pick.model, { model: pick.model, max_tokens: 16000, system, messages }),
+      withFallbacks(pick.model, withEffort(pick.model, { model: pick.model, max_tokens: 16000, system, messages })),
       { signal }
     );
     if (response.stop_reason === 'refusal') {
@@ -731,7 +745,6 @@ function releaseIndexing(projectId) {
 
 const pauses = new Map(); // `${sender.id}:${requestId}` -> resolve(boolean)
 const estimate = (chars) => Math.ceil(chars / 3.5);
-const supportsEffort = (model) => /^claude-(fable|mythos|opus-5|opus-4-[5-8]|sonnet-5|sonnet-4-6|haiku-5)/.test(model);
 
 async function runChat(sender, req) {
   const id = req.requestId;
@@ -820,7 +833,7 @@ async function runChat(sender, req) {
       // Client tools streamed with eager input; inputs are validated in runTool.
       const toolParams = defs.map((t) => ({ ...t, eager_input_streaming: true }));
       const msgs = messages.slice();
-      const effort = supportsEffort(pick.model) ? { output_config: { effort: mode === 'read' ? 'low' : 'high' } } : {};
+      const effort = withEffort(pick.model, {});
 
       // Exact size of the first request when the API can tell; else an estimate.
       let first = estimate(prompt.length + ws.index.length + JSON.stringify(msgs).length + JSON.stringify(defs).length);

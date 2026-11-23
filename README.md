@@ -273,8 +273,8 @@ is embedded in the background, cached by its content like the summaries;
 **Efficiency.** The system prompt and the index are kept byte-identical between
 requests (the open file, older-conversation summaries and related units travel in
 the newest message instead), so Claude's prompt cache covers them across rounds
-and questions. Claude uses effort `high` in Edit and Search mode and `low` in Read
-mode, and the first request is measured with the token-counting API. OpenAI and
+and questions. Claude runs at the effort chosen in AI Settings (`low` by default,
+for chat, Ctrl+K and summaries alike), and the first request is measured with the token-counting API. OpenAI and
 local models stream their answers and tool calls. The project copy is downloaded
 again only when Overleaf reports a newer `lastUpdated`. While a chat runs on the
 local server, background summarizing on that server waits.
