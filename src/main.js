@@ -376,6 +376,13 @@ function showSetup() {
 
 // -------------------------------------------------------------------- ipc ---
 
+// Scripts the page preload injects before the page's own scripts run.
+const EARLY_PAGE_SCRIPT = fs.readFileSync(path.join(__dirname, 'page', 'candidates.js'), 'utf8');
+
+ipcMain.on('page:early-script', (event) => {
+  event.returnValue = EARLY_PAGE_SCRIPT;
+});
+
 function fromSetup(event) {
   return setupWindow && event.sender === setupWindow.webContents;
 }
@@ -497,7 +504,7 @@ function buildMenu() {
         { label: 'Actual Size', role: 'resetZoom' },
         { type: 'separator' },
         { label: 'Toggle Full Screen', role: 'togglefullscreen' },
-        { label: 'Developer Tools', role: 'toggleDevTools' },
+        { label: 'Developer Tools', role: 'toggleDevTools', accelerator: 'F12' },
       ],
     },
   ];
