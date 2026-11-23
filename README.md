@@ -221,6 +221,26 @@ Conversations are kept per project on
 this computer: **+** starts a new one, **☰** lists the earlier ones to reopen or
 delete. Each conversation is its own context; only its messages are sent.
 
+**Hybrid: song-1.** With both a local model and a Claude connection, the chat's
+model menu also offers `song-1`. It is prompt management, not a model:
+
+1. The local model (the summary model if it is local, else the first local model)
+   answers; the draft streams into the chat.
+2. The local model reviews the request and the draft against a fixed rubric and
+   scores difficulty and quality from 1 to 5.
+3. If quality is 3 or less (or the review is unreadable, the draft is empty, or its
+   edits could not be placed), the draft is replaced: Claude Opus 5.5 at effort
+   low takes over. Otherwise the local answer stands (no cost).
+4. For a hard request (difficulty 4 or more), Opus first plans up to four
+   read-only subtasks, the local model does them with the read tools, and Opus
+   then answers with the draft, the review and those results as unverified notes
+   it checks with its own tools. (Planning by the large model and execution by the
+   small one follows Minions, ICML 2025.)
+
+Only the final answer's edits and marks reach the files. The answer's byline says
+which way it went and the scores. A self-review by a small model is a weak signal,
+so the rule leans towards handing over.
+
 The conversation stays when you switch models: the app keeps it and sends it to
 whichever model is selected. A newly selected model has no prompt cache for it,
 though, so its first message reads the instructions, the index and the

@@ -352,7 +352,8 @@
   const fmtCost = (c) => (c < 0.01 && c > 0 ? '<$0.01' : `$${c.toFixed(2)}`);
   // Estimated from the token usage this app saw; other apps using the key are not included.
   async function updateSpend() {
-    const provider = (model.value || '').split(':')[0];
+    let provider = (model.value || '').split(':')[0];
+    if (provider === 'hybrid') provider = 'claude'; // song-1 pays only for Claude
     if (!provider) {
       spend.textContent = '';
       return;
@@ -805,6 +806,11 @@
       active.el.appendChild(ask);
       list.scrollTop = list.scrollHeight;
       setStatus('Paused: waiting for your answer.');
+    } else if (ev.type === 'reset') {
+      // song-1 replaced the local draft: the stronger model's answer follows.
+      active.text = '';
+      active.body.textContent = '';
+      setStatus(ev.text);
     } else if (ev.type === 'delta') {
       active.text += ev.text;
       // Edit blocks are shown as cards once complete; while streaming, hide them.
