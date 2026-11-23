@@ -44,6 +44,9 @@ OpenAI-compatible server such as Ollama. Keys stay on this computer. The local c
 everything local (chat, summaries, song-1), so the server never swaps models; it
 is loaded when you open a project.
 
+- **Connector** (optional): Claude Code on your own server as a model, through
+  connector — enter its address, key
+  and models (`connector-opus` …). No API cost; the subscription's limits apply.
 - **`Ctrl+K`** rewrites the selected lines.
 - **Chat panel** (under the file outline) answers questions about the whole
   project. `Ctrl+L` adds the selected lines to the message. Modes:

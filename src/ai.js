@@ -17,14 +17,18 @@ const projectIndex = require('./project-index');
 const usage = require('./usage');
 const { DEFAULT_STYLE } = require('./writing-style');
 
-const PROVIDERS = ['claude', 'openai', 'local'];
+const PROVIDERS = ['claude', 'openai', 'local', 'connector'];
+// Connections that cost nothing per token (a local server; connector runs on a subscription).
+const FREE = new Set(['local', 'connector']);
+const HAS_URL = new Set(['local', 'connector']);
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const SONG1_PAID = 'claude-opus-5-5';
-const PROVIDER_NAME = { claude: 'Claude', openai: 'OpenAI', local: 'Local' };
+const PROVIDER_NAME = { claude: 'Claude', openai: 'OpenAI', local: 'Local', connector: 'Connector' };
 const DEFAULTS = {
   claude: { models: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'] },
   openai: { models: [] },
   local: { models: [], baseURL: 'http://localhost:11434/v1' },
+  connector: { models: [], baseURL: 'http://localhost:8787/v1' },
 };
 // Models that accept server-side refusal fallbacks ("default" routing).
 const FALLBACK_MODELS = new Set(['claude-fable-5-2', 'claude-fable-5-1', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5']);
@@ -170,7 +174,7 @@ function openKey(stored) {
   return '';
 }
 
-const usable = (s, p) => (p === 'local' ? !!s.local.baseURL : !!openKey(s[p].key)) && s[p].models.length > 0;
+const usable = (s, p) => (p === 'local' ? !!s.local.baseURL : p === 'connector' ? !!s.connector.baseURL && !!openKey(s.connector.key) : !!openKey(s[p].key)) && s[p].models.length > 0;
 
 function publicSettings() {
   const s = settings();
@@ -179,7 +183,7 @@ function publicSettings() {
     styleEnabled: s.styleEnabled, style: s.style, defaultStyle: DEFAULT_STYLE, effort: s.effort,
   };
   for (const p of PROVIDERS) {
-    out[p] = { models: s[p].models, hasKey: !!openKey(s[p].key), ...(p === 'local' ? { baseURL: s[p].baseURL } : {}) };
+    out[p] = { models: s[p].models, hasKey: !!openKey(s[p].key), ...(HAS_URL.has(p) ? { baseURL: s[p].baseURL } : {}) };
   }
   return out;
 }
@@ -211,10 +215,10 @@ function applyForm(form) {
   for (const p of PROVIDERS) {
     const f = (form && form[p]) || {};
     const entry = { ...s[p], models: cleanModels(f.models) };
-    if (p === 'local') {
-      const url = str(f.baseURL, 500) || DEFAULTS.local.baseURL;
+    if (HAS_URL.has(p)) {
+      const url = str(f.baseURL, 500) || DEFAULTS[p].baseURL;
       const u = new URL(url);
-      if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('The local server address must be http or https.');
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('The server address must be http or https.');
       entry.baseURL = url.replace(/\/+$/, '');
     }
     if (f.clearKey) entry.key = '';
@@ -274,7 +278,8 @@ function openaiClient(s, provider) {
   const entry = s[provider];
   const key = openKey(entry.key);
   if (provider === 'openai' && !key) throw new Error('No OpenAI API key. Add one in File > AI Settings.');
-  return new OpenAI({ apiKey: key || 'local', ...(provider === 'local' ? { baseURL: entry.baseURL } : {}) });
+  if (provider === 'connector' && !key) throw new Error('No connector key. Add it in File > AI Settings.');
+  return new OpenAI({ apiKey: key || 'local', ...(HAS_URL.has(provider) ? { baseURL: entry.baseURL } : {}) });
 }
 
 // Claude effort from AI Settings (default low) for models that take it. Opus 4.5
@@ -716,7 +721,7 @@ async function runIndexJob(projectId, sender) {
     if (pick && !(pick.provider === 'local' && localChats > 0)) {
       const est = projectIndex.estimateTokens(p);
       const limit = settings().tokenLimit;
-      if (est.units && pick.provider !== 'local' && est.tokens > limit && !job.approved) {
+      if (est.units && !FREE.has(pick.provider) && est.tokens > limit && !job.approved) {
         job.status = { ...base(), state: 'needs-approval', estimate: est };
         return;
       }
@@ -942,7 +947,7 @@ const estimate = (chars) => Math.ceil(chars / 3.5);
 // collects proposals/hits in out. Returns { text, rounds, stopped }.
 async function agentLoop({ pick, prompt, ws, messages, defs, tools, out, send, checkBudget, signal, acct }) {
   const s = pick.s;
-  const metered = pick.provider !== 'local';
+  const metered = !FREE.has(pick.provider);
   const controller = { signal };
     let text = '';
     let rounds = 0;
@@ -1279,7 +1284,7 @@ function init(context) {
       return { ok: false, error: String(err.message || err) };
     }
     const s = settings();
-    if (!usable(s, provider)) return { ok: false, error: `Add ${provider === 'local' ? 'a server address and' : 'an API key and'} at least one model first.` };
+    if (!usable(s, provider)) return { ok: false, error: `Add ${provider === 'local' ? 'a server address and' : provider === 'connector' ? 'the address, the key and' : 'an API key and'} at least one model first.` };
     const res = await runEdit(
       { instruction: 'Fix the spelling.', selection: 'Teh quick brown fox.' },
       `${provider}:${s[provider].models[0]}`,
@@ -1310,7 +1315,7 @@ function init(context) {
     if (!fromServer(event) || !req || !/^[0-9a-f]{24}$/.test(String(req.projectId))) return null;
     let pick = choices(settings(), { hybrid: true }).find((c) => c.id === req.choiceId);
     if (!pick) return null;
-    if (pick.provider === 'local') return { paid: false };
+    if (FREE.has(pick.provider)) return { paid: false };
     // song-1 pays only when it hands the question to Claude.
     if (pick.provider === 'hybrid') pick = { ...pick, model: SONG1_PAID, label: `${pick.label}; when it hands a question to ${SONG1_PAID}` };
     let indexChars = 0;
@@ -1330,7 +1335,7 @@ function init(context) {
   // This month's estimated spending, for the label next to the chat's model menu.
   ipcMain.handle('ai:usage', (event, provider) => {
     if (!fromServer(event)) return null;
-    return usage.summary(['claude', 'openai', 'local'].includes(provider) ? provider : null);
+    return usage.summary(['claude', 'openai', 'local', 'connector'].includes(provider) ? provider : null);
   });
 
   ipcMain.handle('ai:info', (event, purpose) => {

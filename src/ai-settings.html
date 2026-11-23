@@ -68,6 +68,19 @@
     <div class="tools"><button data-a="fetch" type="button">Fetch model list</button><button data-a="test" type="button">Save &amp; Test</button><span class="out" data-k="out"></span></div>
   </fieldset>
 
+  <fieldset data-p="connector">
+    <legend>Connector (Claude Code on your server)</legend>
+    <label class="f">Server address</label>
+    <input data-k="baseURL" type="text" spellcheck="false" placeholder="http://192.168.50.108:8787/v1">
+    <label class="f">Key</label>
+    <div class="row"><input data-k="key" type="password" autocomplete="off" spellcheck="false">
+      <span class="state" data-k="state"></span><button class="link" data-a="clear" type="button">Remove</button></div>
+    <label class="f">Models (one per line)</label>
+    <textarea data-k="models" spellcheck="false" placeholder="connector-opus"></textarea>
+    <div class="note">Uses the Claude Code login on that server: no API cost, the subscription's limits apply.</div>
+    <div class="tools"><button data-a="fetch" type="button">Fetch model list</button><button data-a="test" type="button">Save &amp; Test</button><span class="out" data-k="out"></span></div>
+  </fieldset>
+
   <fieldset>
     <legend>Chat index and limits</legend>
     <label class="f" for="summary">Summary model (writes the one-line summaries in the project index and of older chat messages)</label>
@@ -106,17 +119,17 @@
   </div>
 
 <script>
-  const P = ['claude', 'openai', 'local'];
+  const P = ['claude', 'openai', 'local', 'connector'];
   const fs = (p) => document.querySelector(`fieldset[data-p="${p}"]`);
   const el = (p, k) => fs(p).querySelector(`[data-k="${k}"]`);
-  const clear = { claude: false, openai: false, local: false };
+  const clear = { claude: false, openai: false, local: false, connector: false };
 
   function show(s) {
     for (const p of P) {
       el(p, 'models').value = (s[p].models || []).join('\n');
       el(p, 'key').value = '';
       el(p, 'state').textContent = s[p].hasKey ? 'saved' : 'not set';
-      if (p === 'local') el(p, 'baseURL').value = s[p].baseURL || '';
+      if (p === 'local' || p === 'connector') el(p, 'baseURL').value = s[p].baseURL || '';
       clear[p] = false;
     }
     const sel = document.getElementById('summary');
@@ -146,7 +159,7 @@
     };
     for (const p of P) {
       f[p] = { models: el(p, 'models').value, key: el(p, 'key').value, clearKey: clear[p] };
-      if (p === 'local') f[p].baseURL = el(p, 'baseURL').value;
+      if (p === 'local' || p === 'connector') f[p].baseURL = el(p, 'baseURL').value;
     }
     return f;
   }

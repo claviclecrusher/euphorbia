@@ -274,7 +274,7 @@
     if (confirmingSwitch) return;
     const next = model.value;
     const prev = modelValue;
-    if (!prev || next === prev || !messages.length || next.startsWith('local:')) {
+    if (!prev || next === prev || !messages.length || next.startsWith('local:') || next.startsWith('connector:')) {
       modelValue = next;
       return;
     }
@@ -356,6 +356,11 @@
     if (provider === 'hybrid') provider = 'claude'; // song-1 pays only for Claude
     if (!provider) {
       spend.textContent = '';
+      return;
+    }
+    if (provider === 'connector') {
+      spend.textContent = 'subscription';
+      spend.title = 'Connector: Claude Code on your subscription; no API cost.';
       return;
     }
     if (provider === 'local') {
