@@ -16,17 +16,15 @@
     </mask>
   </defs>
   <g fill="#2f5d3a">
-    <!-- leaf tuft: short, needle-thin, fanning from the tip -->
-    <g stroke="#2f5d3a" stroke-width="13" stroke-linecap="round" fill="none">
-      <path d="M502 318 C482 270 452 244 412 232"/>
-      <path d="M522 318 C542 270 572 244 612 232"/>
-      <path d="M506 314 C496 262 478 222 452 192"/>
-      <path d="M518 314 C528 262 546 222 572 192"/>
-      <path d="M512 312 C510 262 512 214 518 168"/>
-      <path d="M498 324 C468 300 430 294 394 300"/>
-      <path d="M526 324 C556 300 594 294 630 300"/>
-    </g>
-    <!-- body: egg shape, narrow top, broad base -->
-    <path mask="url(#cut)" d="M512 300 C610 300 662 400 696 520 C740 670 760 800 720 880 C690 940 610 960 512 960 C414 960 334 940 304 880 C264 800 284 670 334 520 C362 400 414 300 512 300 Z"/>
+    <!-- leaves: short, narrow, filled, fanning from the tip -->
+    <path d="M496 364 C420 334 330 334 236 366 C326 312 420 316 506 348 Z"/>
+    <path d="M528 364 C604 334 694 334 788 366 C698 312 604 316 518 348 Z"/>
+    <path d="M494 380 C430 330 350 300 270 300 C360 270 440 300 512 366 Z"/>
+    <path d="M530 380 C594 330 674 300 754 300 C664 270 584 300 512 366 Z"/>
+    <path d="M500 374 C462 310 410 250 350 200 C430 220 490 280 522 362 Z"/>
+    <path d="M524 374 C562 310 614 250 674 200 C594 220 534 280 502 362 Z"/>
+    <path d="M512 368 C488 300 490 220 512 150 C534 220 536 300 512 368 Z"/>
+    <!-- body: an upright oval, a little fuller below the middle, rounded at both ends -->
+    <path mask="url(#cut)" d="M512 340 C620 340 690 440 700 600 C710 780 660 950 512 950 C364 950 314 780 324 600 C334 440 404 340 512 340 Z"/>
   </g>
 </svg>
