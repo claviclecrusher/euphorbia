@@ -20,6 +20,16 @@ choose **More info → Run anyway**.
 
 The app asks for a server address on first launch.
 
+## Window theme
+
+**View → Window Theme** chooses the window colours: **System** (follow the
+operating system, the default), **Light** or **Dark**. The choice is remembered. It
+sets the window frame where the operating system lets apps choose it (the title
+bar on Windows), the app's own dialogs, and the colour scheme pages are told to
+prefer. On Linux desktops that draw window frames themselves (e.g. GNOME) the frame
+follows the desktop theme instead. Overleaf's own editor colours are set in
+Overleaf's settings.
+
 ## Servers
 
 The **Server** menu lists the saved servers; picking one switches to it
@@ -182,7 +192,15 @@ there. When you ask for a change, the model's edits become AI suggestions in the
 files (no file is switched or changed until you accept); an edit that can't be
 placed is listed with the reason and a **Try again** button.
 
-The **mode** button next to Send cycles through three modes, and each message
+The row under the message box holds the **model** menu (left; hover for the
+provider), this month's **spending** for that model's provider, the **mode** button
+and Send. Spending is estimated from the token usage the APIs report for every
+request this app makes (chat, Ctrl+K, summaries, embeddings), priced per model;
+hover it for a per-model breakdown. Claude models are priced; models without a
+known price (OpenAI) show tokens instead; local models show "free". Use made by
+other apps or computers with the same key is not included (the APIs do not report
+account balances). The label is hidden when the row is too narrow to show it
+whole. The mode button cycles through three modes, and each message
 carries its mode to the model:
 
 - **Edit**: the AI may change the files, as edits to accept or reject.

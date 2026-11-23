@@ -14,6 +14,7 @@ const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI = require('openai');
 const projectIndex = require('./project-index');
+const usage = require('./usage');
 const { DEFAULT_STYLE } = require('./writing-style');
 
 const PROVIDERS = ['claude', 'openai', 'local'];
@@ -299,6 +300,7 @@ async function complete(pick, system, messages, signal) {
       const why = response.stop_details && response.stop_details.explanation;
       throw new Error(`The model declined this request.${why ? ` ${why}` : ''}`);
     }
+    usage.record('claude', response.model || pick.model, usage.fromAnthropic(response.usage));
     if (response.stop_reason === 'max_tokens') throw new Error('The answer was cut off (too long). Try a shorter selection.');
     return { text: response.content.filter((b) => b.type === 'text').map((b) => b.text).join(''), model: response.model || pick.model };
   }
@@ -307,6 +309,7 @@ async function complete(pick, system, messages, signal) {
     { model: pick.model, messages: [{ role: 'system', content: system }, ...messages] },
     { signal }
   );
+  usage.record(pick.provider, pick.model, usage.fromOpenAI(response.usage));
   const choice = response.choices && response.choices[0];
   if (!choice || !choice.message) throw new Error('The model returned no answer.');
   if (choice.finish_reason === 'length') throw new Error('The answer was cut off (too long). Try a shorter selection.');
@@ -635,6 +638,7 @@ function embedderFor(signal) {
   const client = openaiClient(s, e.provider);
   const fn = async (texts) => {
     const res = await client.embeddings.create({ model: e.model, input: texts }, signal ? { signal } : undefined);
+    if (res.usage) usage.record(e.provider, e.model, { input: res.usage.prompt_tokens || res.usage.total_tokens || 0 });
     return res.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
   };
   fn.model = `${e.provider}:${e.model}`;
@@ -850,6 +854,7 @@ async function runChat(sender, req) {
         });
         const final = await stream.finalMessage();
         const u = final.usage || {};
+        usage.record('claude', final.model || pick.model, usage.fromAnthropic(u));
         const turn = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.output_tokens || 0);
         used += turn;
         send('usage', { used, cached: u.cache_read_input_tokens || 0 });
@@ -902,10 +907,10 @@ async function runChat(sender, req) {
         );
         let content = '';
         let finish = null;
-        let usage = null;
+        let usage_ = null;
         const calls = [];
         for await (const chunk of stream) {
-          if (chunk.usage) usage = chunk.usage;
+          if (chunk.usage) usage_ = chunk.usage;
           const choice = chunk.choices && chunk.choices[0];
           if (!choice) continue;
           if (choice.finish_reason) finish = choice.finish_reason;
@@ -924,7 +929,8 @@ async function runChat(sender, req) {
           }
         }
         const list = calls.filter(Boolean);
-        const turn = usage ? (usage.prompt_tokens || 0) + (usage.completion_tokens || 0) : estimate(JSON.stringify(msgs).length + content.length);
+        if (usage_) usage.record(pick.provider, pick.model, usage.fromOpenAI(usage_));
+        const turn = usage_ ? (usage_.prompt_tokens || 0) + (usage_.completion_tokens || 0) : estimate(JSON.stringify(msgs).length + content.length);
         used += turn;
         send('usage', { used });
         msgs.push({ role: 'assistant', content: content || '', ...(list.length ? { tool_calls: list } : {}) });
@@ -1071,6 +1077,12 @@ function init(context) {
   });
 
   // ---- from the editor
+
+  // This month's estimated spending, for the label next to the chat's model menu.
+  ipcMain.handle('ai:usage', (event, provider) => {
+    if (!fromServer(event)) return null;
+    return usage.summary(['claude', 'openai', 'local'].includes(provider) ? provider : null);
+  });
 
   ipcMain.handle('ai:info', (event, purpose) => {
     if (!fromServer(event)) return null;

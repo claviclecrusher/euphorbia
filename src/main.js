@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, net, shell, session } = require('electron');
+const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, net, shell, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const updater = require('./updater');
@@ -427,6 +427,18 @@ ipcMain.handle('setup:save', async (event, input) => {
 
 // ------------------------------------------------------------------- menu ---
 
+// Window colours: 'system' follows the OS; 'light' / 'dark' force one. This
+// sets the window frame and menus, and what pages see as their colour scheme.
+function windowTheme() {
+  return ['system', 'light', 'dark'].includes(config.windowTheme) ? config.windowTheme : 'system';
+}
+
+function setWindowTheme(value) {
+  saveConfig({ windowTheme: value });
+  nativeTheme.themeSource = value;
+  buildMenu();
+}
+
 function buildMenu() {
   const focused = () => BrowserWindow.getFocusedWindow();
   const serverItems = config.servers.map((s, i) => ({
@@ -511,6 +523,19 @@ function buildMenu() {
         { label: 'Actual Size', role: 'resetZoom' },
         { type: 'separator' },
         { label: 'Toggle Full Screen', role: 'togglefullscreen' },
+        {
+          label: 'Window Theme',
+          submenu: [
+            ['system', 'System'],
+            ['light', 'Light'],
+            ['dark', 'Dark'],
+          ].map(([value, label]) => ({
+            label,
+            type: 'radio',
+            checked: windowTheme() === value,
+            click: () => setWindowTheme(value),
+          })),
+        },
         { label: 'Developer Tools', role: 'toggleDevTools', accelerator: 'F12' },
       ],
     },
@@ -538,6 +563,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     config = loadConfig();
+    nativeTheme.themeSource = windowTheme();
 
     const override = cliServer();
     if (override) {
