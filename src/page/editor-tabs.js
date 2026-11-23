@@ -104,13 +104,18 @@
     expecting = null;
     const name = storeGet('editor.open_doc_name') || (tabs.find((t) => t.id === docId) || {}).name || 'document';
     const folders = treeEntity(docId) ? foldersOf(docId) : null;
+    // Folder path for the tooltip (Overleaf's own file-name row is hidden).
+    const path = folders
+      ? folders.map((f) => (treeEntity(f) ? treeEntity(f).textContent.replace(/chevron_right|expand_more|more_vert/g, '').trim() : '')).concat(name).join(' / ')
+      : null;
     const existing = tabs.find((t) => t.id === docId);
     if (existing) {
       existing.name = name;
+      if (path) existing.path = path;
       if (folders) existing.folders = folders;
     } else {
       const at = tabs.findIndex((t) => t.id === activeId);
-      const tab = { id: docId, name, folders: folders || [] };
+      const tab = { id: docId, name, folders: folders || [], path: path || name };
       if (at < 0) tabs.push(tab);
       else tabs.splice(at + 1, 0, tab);
     }
@@ -179,7 +184,7 @@
   function moveTab(id) {
     const tab = tabs.find((t) => t.id === id);
     if (!tab || !bridge) return;
-    bridge.send('split:move', { id: tab.id, name: tab.name, folders: tab.folders || [] });
+    bridge.send('split:move', { id: tab.id, name: tab.name, folders: tab.folders || [], path: tab.path || tab.name });
     removeTab(id);
   }
 
@@ -214,7 +219,7 @@
       el.className = 'ol-desktop-tab' + (tab.id === activeId ? ' active' : '');
       el.setAttribute('role', 'tab');
       el.setAttribute('aria-selected', String(tab.id === activeId));
-      el.title = tab.name;
+      el.title = tab.path || tab.name;
       el.draggable = true;
       el.dataset.id = tab.id;
 
@@ -316,7 +321,7 @@
     }
     if (!bridge) return;
     bridge.send('split:taken', data.tab.id);
-    addTab({ id: data.tab.id, name: String(data.tab.name), folders: data.tab.folders || [] }, true);
+    addTab({ id: data.tab.id, name: String(data.tab.name), folders: data.tab.folders || [], path: String(data.tab.path || data.tab.name) }, true);
   }
 
   strip.addEventListener('dragover', (e) => {
@@ -529,6 +534,8 @@
   style.textContent = `
     .ol-desktop-tabs-host { display: flex !important; flex-direction: column; }
     .ol-desktop-tabs-editor { flex: 1 1 auto; min-height: 0; }
+    /* The tab strip names the open file, so Overleaf's file-name row is hidden. */
+    .ol-desktop-tabs-host .ol-cm-breadcrumbs { display: none !important; }
     .ol-desktop-tabs-strip { flex: 0 0 auto; display: flex; overflow-x: auto; overflow-y: hidden; min-height: 26px;
       background: var(--bg-dark-secondary, #2f3a4c); scrollbar-width: thin; }
     .ol-desktop-tab { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; max-width: 240px;
