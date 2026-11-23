@@ -1,17 +1,17 @@
 {
   "name": "overleaf-desktop",
   "productName": "Overleaf Desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Desktop client for a self-hosted Overleaf Community Edition server",
-  "homepage": "https://github.com/overleaf/overleaf",
+  "homepage": "https://github.com/claviclecrusher/overleaf-desktop",
   "main": "src/main.js",
   "license": "MIT",
   "author": "overleaf-desktop",
   "scripts": {
     "start": "electron .",
-    "dist:linux": "electron-builder --linux AppImage deb",
-    "dist:win": "electron-builder --win nsis portable",
-    "dist": "electron-builder --linux AppImage deb --win nsis portable"
+    "dist:linux": "electron-builder --linux AppImage deb --publish never",
+    "dist:win": "electron-builder --win nsis portable --publish never",
+    "release": "bash scripts/release.sh"
   },
   "build": {
     "appId": "local.overleaf.desktop",
@@ -39,11 +39,28 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "overleaf-desktop-setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "claviclecrusher",
+        "repo": "overleaf-desktop"
+      }
+    ],
+    "appImage": {
+      "artifactName": "overleaf-desktop-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "overleaf-desktop-portable-${version}.${ext}"
     }
   },
   "devDependencies": {
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
   }
 }
