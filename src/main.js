@@ -4,6 +4,7 @@ const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, net, shell, sessio
 const fs = require('fs');
 const path = require('path');
 const updater = require('./updater');
+const projectCopy = require('./project-copy');
 
 // ---------------------------------------------------------------- config ---
 //
@@ -103,37 +104,6 @@ function isServerUrl(url) {
   }
 }
 
-// Server pages from which a sign-in may leave for an identity provider
-// (Google, ORCID, institutional SSO, SAML/OIDC).
-const AUTH_PATH = /^\/(login|register|sso-login|institutional-login|auth|saml|oidc|oauth|user\/(settings|sessions|reconfirm|emails))(\/|$)/;
-
-function isAuthPage(url) {
-  try {
-    return isServerUrl(url) && AUTH_PATH.test(new URL(url).pathname);
-  } catch {
-    return false;
-  }
-}
-
-let allowGoogleOnce = false;
-
-function isGoogleSignIn(url) {
-  try {
-    return new URL(url).hostname === 'accounts.google.com';
-  } catch {
-    return false;
-  }
-}
-
-function isWebUrl(url) {
-  try {
-    const { protocol } = new URL(url);
-    return protocol === 'http:' || protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
 function openExternal(url) {
   try {
     const { protocol } = new URL(url);
@@ -178,7 +148,22 @@ async function probeServer(url, timeoutMs = 10000) {
 
 // ---------------------------------------------------------------- windows ---
 
+// Only email and password sign-in works inside the app, so the buttons for
+// Google, ORCID, institutional SSO and the "OR" divider next to them are hidden.
+const HIDE_SSO_CSS = `
+  .form-group:has(> a.btn img.btn-social-icon),
+  .form-group:has(> a.btn[href*="/auth/"]),
+  .form-group:has(> a.btn[href*="/saml/"]),
+  .form-group:has(> a.btn[href*="/oidc/"]),
+  .form-group:has(> a.btn[href*="sso-login"]),
+  a.btn[href^="/auth/"], a.btn[href*="/saml/"], a.btn[href*="/oidc/"], a.btn[href*="sso-login"],
+  .ciam-login-register-or-text-container,
+  .login-register-or-text-container,
+  .login-register-other-links { display: none !important; }
+`;
+
 const webPreferences = {
+  preload: path.join(__dirname, 'page-preload.js'),
   contextIsolation: true,
   nodeIntegration: false,
   sandbox: true,
@@ -189,11 +174,9 @@ function attachCommonHandlers(win) {
   const wc = win.webContents;
 
   // Server pages opened in a "new tab" (detached PDF, project in new tab)
-  // become app windows; so do sign-in popups. Everything else goes to the
-  // system browser.
+  // become app windows. Everything else goes to the system browser.
   wc.setWindowOpenHandler(({ url }) => {
-    const signInPopup = isWebUrl(url) && (isAuthPage(wc.getURL()) || !isServerUrl(wc.getURL()));
-    if (isServerUrl(url) || url === 'about:blank' || signInPopup) {
+    if (isServerUrl(url) || url === 'about:blank') {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
@@ -210,42 +193,25 @@ function attachCommonHandlers(win) {
 
   wc.on('did-create-window', (child) => attachCommonHandlers(child));
 
-  // Same-window navigation stays in the app when it is part of the server or
-  // of a sign-in round trip: leaving from a login page, or moving on from an
-  // identity provider's page we are already on. Any other link that leaves
-  // the server opens in the system browser.
-  wc.on('will-navigate', (event, url) => {
+  // The app window only ever shows the server. Links and redirects that leave
+  // it (including third-party sign-in such as Google or ORCID, which the app
+  // does not support) open in the system browser.
+  const keepOnServer = (event, url) => {
     if (isServerUrl(url)) return;
-    const from = wc.getURL();
-    const signIn = isWebUrl(url) && (isAuthPage(from) || (isWebUrl(from) && !isServerUrl(from)));
-    if (signIn) return;
     event.preventDefault();
     openExternal(url);
+  };
+  wc.on('will-navigate', keepOnServer);
+  wc.on('will-redirect', (event, url, _inPlace, isMainFrame) => {
+    if (isMainFrame) keepOnServer(event, url);
   });
 
-  // Google rejects sign-in from embedded browsers, and a session created in the
-  // system browser cannot be handed to the app. Explain instead of letting the
-  // user run into Google's "this browser may not be secure" page.
-  wc.on('will-redirect', async (event, url, _inPlace, isMainFrame) => {
-    if (!isMainFrame || allowGoogleOnce || !isGoogleSignIn(url) || !isServerUrl(wc.getURL())) return;
-    event.preventDefault();
-    const { response } = await dialog.showMessageBox(win, {
-      type: 'info',
-      message: 'Google sign-in does not work inside desktop apps',
-      detail:
-        'Google blocks sign-in from embedded browsers. Set a password for your Overleaf account ' +
-        '("Forgot your password?" on the login page sends a link), then sign in here with your ' +
-        'email and password.',
-      buttons: ['Set a Password in Browser', 'Try Google Anyway', 'Cancel'],
-      defaultId: 0,
-      cancelId: 2,
-    });
-    if (response === 0) openExternal(config.current + '/user/password/reset');
-    else if (response === 1) {
-      allowGoogleOnce = true;
-      setTimeout(() => (allowGoogleOnce = false), 5000);
-      wc.loadURL(url).catch(() => {});
-    }
+  // Page tweaks: hide sign-in methods the app cannot complete, and add the
+  // cross-server copy entry to the project list.
+  wc.on('did-finish-load', () => {
+    if (!isServerUrl(wc.getURL())) return;
+    wc.insertCSS(HIDE_SSO_CSS).catch(() => {});
+    wc.executeJavaScript(projectCopy.PAGE_SCRIPT).catch(() => {});
   });
 
   wc.on('context-menu', (_e, params) => {
@@ -466,6 +432,11 @@ function buildMenu() {
       submenu: [
         { label: 'Projects', accelerator: 'CmdOrCtrl+Shift+H', click: loadServer },
         {
+          label: 'Copy Project to Another Server…',
+          enabled: !!config.current,
+          click: () => projectCopy.copyFromWindow(),
+        },
+        {
           label: 'Clear Sign-in Data for This Server',
           enabled: !!config.current,
           click: async () => {
@@ -570,6 +541,13 @@ if (!app.requestSingleInstanceLock()) {
     // Refuse device permissions other than clipboard access, which the editor uses.
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
       callback(permission === 'clipboard-read' || permission === 'clipboard-sanitized-write');
+    });
+
+    projectCopy.init({
+      getConfig: () => config,
+      getMainWindow: () => mainWindow,
+      isServerUrl,
+      switchServer,
     });
 
     buildMenu();
