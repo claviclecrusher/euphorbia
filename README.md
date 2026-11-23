@@ -48,6 +48,14 @@ The server list and window position are stored in `config.json` in the user data
 folder (`~/.config/Overleaf Desktop/` on Linux, `%APPDATA%\Overleaf Desktop\` on
 Windows).
 
+## Editor tabs
+
+Every document you open in a project gets a tab above the editor. Click a tab to
+switch to it, `×` or a middle click to close it, and drag tabs to reorder them.
+Tabs are remembered per project on this computer. Overleaf still edits one
+document at a time; switching a tab opens that document as if it had been clicked
+in the file tree, including inside collapsed folders.
+
 ## Candidates
 
 Candidates keep several alternative versions of a block of lines side by side, so
