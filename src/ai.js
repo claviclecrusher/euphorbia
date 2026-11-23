@@ -293,6 +293,9 @@ function withEffort(model, params, forced) {
   return params;
 }
 
+// Connector runs Claude, so it gets the Claude effort from AI Settings.
+const connectorEffort = (pick) => (pick.provider === 'connector' ? { reasoning_effort: pick.effort || settings().effort } : {});
+
 function withFallbacks(model, params) {
   if (FALLBACK_MODELS.has(model)) {
     // A policy decline is re-run on a fallback model inside the same call.
@@ -348,7 +351,7 @@ async function complete(pick, system, messages, signal) {
   }
   const client = openaiClient(pick.s, pick.provider);
   const response = await client.chat.completions.create(
-    { model: pick.model, messages: [{ role: 'system', content: system }, ...messages] },
+    { model: pick.model, messages: [{ role: 'system', content: system }, ...messages], ...connectorEffort(pick) },
     { signal }
   );
   usage.record(pick.provider, pick.model, usage.fromOpenAI(response.usage));
@@ -1044,7 +1047,7 @@ async function agentLoop({ pick, prompt, ws, messages, defs, tools, out, send, c
       for (;;) {
         // Streamed: text appears as it comes; tool calls are assembled from their pieces.
         const stream = await client.chat.completions.create(
-          { model: pick.model, messages: msgs, tools: fnDefs, stream: true, stream_options: { include_usage: true } },
+          { model: pick.model, messages: msgs, tools: fnDefs, stream: true, stream_options: { include_usage: true }, ...connectorEffort(pick) },
           { signal: controller.signal }
         );
         let content = '';

@@ -47,6 +47,7 @@ is loaded when you open a project.
 - **Connector** (optional): Claude Code on your own server as a model, through
   connector — enter its address, key
   and models (`connector-opus` …). No API cost; the subscription's limits apply.
+  The Claude effort setting applies to it too.
 - **`Ctrl+K`** rewrites the selected lines.
 - **Chat panel** (under the file outline) answers questions about the whole
   project. `Ctrl+L` adds the selected lines to the message. Modes:
