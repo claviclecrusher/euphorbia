@@ -1205,7 +1205,7 @@ function showSettings() {
   }
   const parent = ctx.getMainWindow();
   settingsWindow = new BrowserWindow({
-    icon: require('path').join(__dirname, 'icon.png'),
+    icon: process.platform === 'win32' ? undefined : require('path').join(__dirname, 'icon-small.png'),
     width: 600,
     height: 880,
     minHeight: 500,
