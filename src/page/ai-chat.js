@@ -115,21 +115,59 @@
 
   // -------------------------------------------------------------- state ---
 
+  // Conversations per project: { convs: [{ id, title, updatedAt, messages }], current }.
+  // Each conversation is its own context: only its messages are sent.
   const KEY = `ol-desktop-chat:${projectId}`;
-  let messages = [];
+  const MAX_CONVS = 50;
+  const newId = () => Math.random().toString(36).slice(2, 10);
+  const titleOf = (msgs) => {
+    const u = msgs.find((x) => x.role === 'user');
+    return u ? u.content.replace(/\s+/g, ' ').slice(0, 60) : 'New chat';
+  };
+  let convs = [];
+  let currentId = null;
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY) || '[]');
-    if (Array.isArray(saved)) messages = saved;
+    const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (Array.isArray(saved) && saved.length) {
+      // 0.11 kept a single conversation as a plain array.
+      convs = [{ id: newId(), title: titleOf(saved), updatedAt: Date.now(), messages: saved }];
+      currentId = convs[0].id;
+    } else if (saved && Array.isArray(saved.convs)) {
+      convs = saved.convs.filter((c) => c && Array.isArray(c.messages));
+      currentId = convs.some((c) => c.id === saved.current) ? saved.current : null;
+    }
   } catch {
     /* ignore */
   }
+  const currentConv = () => convs.find((c) => c.id === currentId) || null;
+  // `messages` is the open conversation's list (a new, unsaved one until the first message).
+  let messages = currentConv() ? currentConv().messages : [];
   const save = () => {
+    const conv = currentConv();
+    if (conv) {
+      conv.updatedAt = Date.now();
+      conv.messages = messages = messages.slice(-100);
+    }
+    convs.sort((a, b) => b.updatedAt - a.updatedAt);
+    convs = convs.slice(0, MAX_CONVS);
     try {
-      localStorage.setItem(KEY, JSON.stringify(messages.slice(-100)));
+      localStorage.setItem(KEY, JSON.stringify({ convs, current: currentId }));
     } catch {
       /* ignore */
     }
   };
+  function openConv(id) {
+    currentId = id;
+    const conv = currentConv();
+    messages = conv ? conv.messages : [];
+    showingList = false;
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ convs, current: currentId }));
+    } catch {
+      /* ignore */
+    }
+  }
+  let showingList = false;
   let pendingRefs = [];
   let active = null; // { id, el, text }
 
@@ -206,9 +244,11 @@
   model.title = 'Model';
   const reindex = el('button', 'ol-chat-icon', '↻');
   reindex.title = 'Re-read the project now';
+  const history = el('button', 'ol-chat-icon', '\u2630');
+  history.title = 'Conversations';
   const newChat = el('button', 'ol-chat-icon', '+');
   newChat.title = 'New chat';
-  header.append(toggle, title, model, reindex, newChat);
+  header.append(toggle, title, model, reindex, history, newChat);
   const list = el('div', 'ol-chat-list');
   const status = el('div', 'ol-chat-status');
   const composer = el('div', 'ol-chat-composer');
@@ -276,15 +316,57 @@
     setStatus(res && res.ok ? `Indexed ${res.files} file(s), ${Math.round(res.chars / 1000)}k characters.` : (res && res.error) || 'Indexing failed.');
   });
 
+  // A new chat keeps the previous ones; it is saved once its first message is sent.
   newChat.addEventListener('click', () => {
     if (active) return;
-    messages = [];
+    openConv(null);
     pendingRefs = [];
-    save();
     render();
     renderRefs();
     setStatus('');
+    input.focus();
   });
+
+  history.addEventListener('click', () => {
+    if (active) return;
+    showingList = !showingList;
+    render();
+  });
+
+  function renderConvList() {
+    const head = el('div', 'ol-chat-list-head', convs.length ? 'Conversations' : 'No saved conversations yet.');
+    list.appendChild(head);
+    for (const c of convs.slice().sort((a, b) => b.updatedAt - a.updatedAt)) {
+      const row = el('div', 'ol-chat-conv' + (c.id === currentId ? ' current' : ''));
+      const open = el('button', 'ol-chat-conv-open');
+      open.type = 'button';
+      open.appendChild(el('span', 'ol-chat-conv-title', c.title || 'Untitled'));
+      const d = new Date(c.updatedAt);
+      const p2 = (n) => String(n).padStart(2, '0');
+      open.appendChild(el('span', 'ol-chat-conv-meta',
+        `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())} \u00b7 ${c.messages.length} message(s)`));
+      open.addEventListener('click', () => {
+        openConv(c.id);
+        pendingRefs = [];
+        render();
+        renderRefs();
+        setStatus('');
+      });
+      const del = el('button', 'ol-chat-conv-del', '\u00d7');
+      del.type = 'button';
+      del.title = 'Delete this conversation';
+      del.addEventListener('click', () => {
+        if (!window.confirm(`Delete "${c.title || 'Untitled'}"?`)) return;
+        convs = convs.filter((x) => x !== c);
+        if (currentId === c.id) openConv(null);
+        showingList = true;
+        save();
+        render();
+      });
+      row.append(open, del);
+      list.appendChild(row);
+    }
+  }
 
   function setStatus(text, isError) {
     status.textContent = text || '';
@@ -396,6 +478,11 @@
 
   function render() {
     list.textContent = '';
+    history.classList.toggle('on', showingList);
+    if (showingList) {
+      renderConvList();
+      return;
+    }
     if (!messages.length) {
       list.appendChild(el('div', 'ol-chat-empty', 'Ask about this project or ask for a change. Select lines and press Ctrl+L to point at them.'));
     }
@@ -410,6 +497,7 @@
     send.classList.toggle('stop', busy);
     model.disabled = busy;
     newChat.disabled = busy;
+    history.disabled = busy;
   }
 
   function submit() {
@@ -423,6 +511,13 @@
       setStatus('No AI model is set up yet. Open File > AI Settings.', true);
       return;
     }
+    if (!currentConv()) {
+      const conv = { id: newId(), title: text.replace(/\s+/g, ' ').slice(0, 60), updatedAt: Date.now(), messages: [] };
+      convs.unshift(conv);
+      currentId = conv.id;
+      messages = conv.messages;
+    }
+    showingList = false;
     messages.push({ role: 'user', content: text, refs: pendingRefs.slice() });
     pendingRefs = [];
     input.value = '';
@@ -436,7 +531,7 @@
     bubble.appendChild(body);
     list.appendChild(bubble);
     list.scrollTop = list.scrollHeight;
-    active = { id, el: bubble, body, text: '' };
+    active = { id, el: bubble, body, text: '', conv: currentId };
     setBusy(true);
     ai.chatStart({
       requestId: id,
@@ -477,7 +572,8 @@
       render();
     } else if (ev.type === 'done') {
       const msg = { role: 'assistant', content: ev.text, by: ev.by, edits: [] };
-      messages.push(msg);
+      const conv = convs.find((c) => c.id === active.conv);
+      if (conv) conv.messages.push(msg);
       active = null;
       setBusy(false);
       save();
@@ -559,6 +655,16 @@
     .ol-chat-icon { font: inherit; font-size: 13px; line-height: 1; color: inherit; background: none; border: 0; border-radius: 4px;
       padding: 3px 5px; cursor: pointer; opacity: .75; }
     .ol-chat-icon:hover { opacity: 1; background: rgba(255,255,255,.1); }
+    .ol-chat-icon.on { opacity: 1; background: rgba(9,136,66,.5); }
+    .ol-chat-list-head { font-size: 11px; opacity: .6; padding: 4px 2px; }
+    .ol-chat-conv { display: flex; align-items: stretch; border-radius: 6px; margin: 2px 0; }
+    .ol-chat-conv:hover { background: rgba(255,255,255,.07); }
+    .ol-chat-conv.current { background: rgba(9,136,66,.22); }
+    .ol-chat-conv-open { flex: 1; min-width: 0; text-align: left; font: inherit; color: inherit; background: none; border: 0; padding: 5px 6px; cursor: pointer; }
+    .ol-chat-conv-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ol-chat-conv-meta { display: block; font-size: 10px; opacity: .55; }
+    .ol-chat-conv-del { font: inherit; color: inherit; background: none; border: 0; padding: 0 8px; cursor: pointer; opacity: .5; }
+    .ol-chat-conv-del:hover { opacity: 1; }
     .ol-chat-list { flex: 1 1 auto; overflow-y: auto; padding: 4px 6px; min-height: 0; }
     .ol-chat-empty { opacity: .6; padding: 8px 2px; line-height: 1.4; }
     .ol-chat-msg { margin: 6px 0; padding: 6px 8px; border-radius: 6px; line-height: 1.45; }

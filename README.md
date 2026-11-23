@@ -141,8 +141,9 @@ sidebar for more room) is a chat about the whole project. `Ctrl+L` adds the
 selected lines to the message as a link (`main.tex:12-18`); clicking a link jumps
 there. When you ask for a change, the model's edits are added to the files as
 edits with diff for Accept / Reject; an edit that can't be placed is listed with
-the reason and a **Try again** button. The conversation is kept per project on
-this computer; **+** starts a new one.
+the reason and a **Try again** button. Conversations are kept per project on
+this computer: **+** starts a new one, **☰** lists the earlier ones to reopen or
+delete. Each conversation is its own context; only its messages are sent.
 
 The model does not receive the whole project. It gets an index: each file's
 sections with line ranges and first sentence, labels, `\input`s and citation keys.
