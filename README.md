@@ -20,6 +20,16 @@ choose **More info → Run anyway**.
 
 The app asks for a server address on first launch.
 
+## Window theme
+
+**View → Window Theme** chooses the window colours: **System** (follow the
+operating system, the default), **Light** or **Dark**. The choice is remembered. It
+sets the window frame where the operating system lets apps choose it (the title
+bar on Windows), the app's own dialogs, and the colour scheme pages are told to
+prefer. On Linux desktops that draw window frames themselves (e.g. GNOME) the frame
+follows the desktop theme instead. Overleaf's own editor colours are set in
+Overleaf's settings.
+
 ## Servers
 
 The **Server** menu lists the saved servers; picking one switches to it
