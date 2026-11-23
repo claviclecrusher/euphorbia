@@ -27,8 +27,8 @@
 // Overleaf hands out its CodeMirror objects through the
 // (unsupported) UNSTABLE_editor:extensions event.
 (() => {
-  if (window.__overleafDesktopCandidates) return;
-  window.__overleafDesktopCandidates = true;
+  if (window.__euphorbiaCandidates) return;
+  window.__euphorbiaCandidates = true;
 
   const BEGIN = /^\s*%%cand:begin\b(?:\s+id=([\w-]+))?\s*$/;
   const OPTION = /^\s*%%cand:option\b((?:\s+\w+="[^"]*")*)(\s+active)?\s*$/;
@@ -337,7 +337,7 @@
   //   suggestion is drawn over it and written into the file on Accept.
   // Every item shows its place among all items of the project (‹ n/N ›);
   // Accept all / Reject all cover both kinds. Edit blocks in other files are
-  // counted from the app's copy of the project (window.overleafDesktop.ai.listEdits).
+  // counted from the app's copy of the project (window.euphorbia.ai.listEdits).
 
   const reviewProject = (location.pathname.match(/^\/project\/([0-9a-f]{24})/) || [])[1] || null;
   const review = { files: [] }; // [{ path, count }] edit blocks per file, from the app copy
@@ -509,7 +509,7 @@
   }
 
   async function refreshReview() {
-    const ai = window.overleafDesktop && window.overleafDesktop.ai;
+    const ai = window.euphorbia && window.euphorbia.ai;
     if (!ai || !ai.listEdits || !reviewProject) return;
     try {
       const res = await ai.listEdits(reviewProject);
@@ -713,7 +713,7 @@
   // configured in the app (File > AI Settings), and put the answer into an
   // edit block, so it can be accepted or rejected like any other edit.
 
-  const aiBridge = () => window.overleafDesktop && window.overleafDesktop.ai;
+  const aiBridge = () => window.euphorbia && window.euphorbia.ai;
   let aiPrompt = null; // the open prompt box, if any
 
   function aiEdit(view) {

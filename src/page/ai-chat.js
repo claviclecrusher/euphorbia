@@ -8,14 +8,14 @@
 //   blocks, which are put into the files as edits with diff (Accept / Reject).
 // - The conversation is kept per project on this computer.
 (() => {
-  if (window.__overleafDesktopChat) return;
-  window.__overleafDesktopChat = true;
+  if (window.__euphorbiaChat) return;
+  window.__euphorbiaChat = true;
 
   const PANE = window.__olDesktopPane || 0;
   const m = location.pathname.match(/^\/project\/([0-9a-f]{24})\/?$/);
   if (!PANE || !m) return;
   const projectId = m[1];
-  const ai = window.overleafDesktop && window.overleafDesktop.ai;
+  const ai = window.euphorbia && window.euphorbia.ai;
   if (!ai) return;
 
   let CM = null; // CodeMirror objects from Overleaf

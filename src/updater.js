@@ -43,8 +43,8 @@ function init() {
   if (!app.isPackaged) return;
 
   // Test hook: point the updater at a plain HTTP directory instead of GitHub.
-  if (process.env.OVERLEAF_DESKTOP_UPDATE_URL) {
-    autoUpdater.setFeedURL({ provider: 'generic', url: process.env.OVERLEAF_DESKTOP_UPDATE_URL });
+  if (process.env.EUPHORBIA_UPDATE_URL) {
+    autoUpdater.setFeedURL({ provider: 'generic', url: process.env.EUPHORBIA_UPDATE_URL });
   }
 
   autoUpdater.autoDownload = canSelfUpdate();

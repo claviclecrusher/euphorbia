@@ -76,10 +76,10 @@ let config = { servers: [], current: null };
 let mainWindow = null;
 let setupWindow = null;
 
-// `--server=http://host` or OVERLEAF_URL selects a server for this run only.
+// `--server=http://host` or EUPHORBIA_SERVER selects a server for this run only.
 function cliServer() {
   const arg = process.argv.find((a) => a.startsWith('--server='));
-  return (arg && arg.slice('--server='.length)) || process.env.OVERLEAF_URL || null;
+  return (arg && arg.slice('--server='.length)) || process.env.EUPHORBIA_SERVER || null;
 }
 
 // ------------------------------------------------------------------- urls ---
@@ -176,6 +176,21 @@ async function probeServer(url, timeoutMs = 10000) {
 
 // Only email and password sign-in works inside the app, so the buttons for
 // Google, ORCID, institutional SSO and the "OR" divider next to them are hidden.
+// Overleaf's loading screen shows its logo filling up as the project loads
+// (a grey copy with a coloured copy rising over it). Show the app's icon instead.
+const BRAND_CSS = (() => {
+  try {
+    const svg = fs.readFileSync(path.join(__dirname, 'icon.svg'), 'utf8');
+    const url = (text) => `url("data:image/svg+xml;base64,${Buffer.from(text).toString('base64')}")`;
+    return `
+      .loading-screen .loading-screen-brand { background-image: ${url(svg.replace(/#2f5d3a/g, '#c5cbc3'))} !important; padding-top: 100% !important; }
+      .loading-screen .loading-screen-brand::after { background-image: ${url(svg)} !important; }
+    `;
+  } catch {
+    return '';
+  }
+})();
+
 const HIDE_SSO_CSS = `
   .form-group:has(> a.btn img.btn-social-icon),
   .form-group:has(> a.btn[href*="/auth/"]),
@@ -235,6 +250,9 @@ function attachCommonHandlers(win, contents) {
 
   // Page tweaks: hide sign-in methods the app cannot complete, and add the
   // cross-server copy entry to the project list.
+  wc.on('dom-ready', () => {
+    if (BRAND_CSS && isServerUrl(wc.getURL())) wc.insertCSS(BRAND_CSS).catch(() => {});
+  });
   wc.on('did-finish-load', () => {
     if (!isServerUrl(wc.getURL())) return;
     wc.insertCSS(HIDE_SSO_CSS).catch(() => {});
@@ -577,7 +595,7 @@ if (!app.requestSingleInstanceLock()) {
   // Present as plain Chrome. Google sign-in and reCAPTCHA reject user agents
   // that advertise an embedded browser.
   app.userAgentFallback = app.userAgentFallback
-    .replace(/\s(Electron|euphorbia|Euphorbia|overleaf-desktop|OverleafDesktop)\/\S+/gi, '');
+    .replace(/\s(Electron|euphorbia)\/\S+/gi, '');
 
   app.on('second-instance', () => {
     const win = mainWindow || setupWindow;
