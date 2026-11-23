@@ -48,6 +48,33 @@ The server list and window position are stored in `config.json` in the user data
 folder (`~/.config/Overleaf Desktop/` on Linux, `%APPDATA%\Overleaf Desktop\` on
 Windows).
 
+## Candidates
+
+Candidates keep several alternative versions of a block of lines side by side, so
+you can switch between them while deciding which one to keep.
+
+- Select some lines and press `Ctrl+Shift+I` to turn them into a candidate block.
+  A bar appears above the block with one button per candidate.
+- `+` (or `Ctrl+Shift+I` with the cursor inside the block) adds a candidate. It
+  starts as a copy of the active one; edit it into the alternative.
+- Click a candidate to switch to it. Double-click to rename it, `×` to delete it.
+- **Keep active** ends the block: the active text stays and the others are removed.
+
+Only the active candidate is compiled. Everything is stored in the `.tex` source as
+comments, so candidates survive across devices, collaborators and project copies:
+
+    %%cand:begin id=k3f9
+    %%cand:option name="short"
+    %| We propose a method.
+    %%cand:option name="long" active
+    We propose a novel method that
+    improves stability.
+    %%cand:end
+
+In a web browser the block shows as this plain text. Selections always extend to whole lines, and blocks cannot be nested.
+
+Developer Tools moved from `Ctrl+Shift+I` to `F12`.
+
 ## Updates
 
 On startup the app checks the latest published GitHub release; **File → Check for

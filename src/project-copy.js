@@ -50,8 +50,18 @@ const PAGE_SCRIPT = `(() => {
     menu.appendChild(node);
   }
 
+  // Overleaf gives the tags dropdown the same id and test id as the More
+  // dropdown. The tags one has a header and an aria-label on its toggle.
+  function isMoreMenu(menu) {
+    if (menu.querySelector('.dropdown-header')) return false;
+    const toggle = menu.parentElement && menu.parentElement.querySelector('.dropdown-toggle');
+    return !(toggle && toggle.hasAttribute('aria-label'));
+  }
+
   const scan = () =>
-    document.querySelectorAll('[data-testid="project-tools-more-dropdown-menu"]').forEach(add);
+    document.querySelectorAll('[data-testid="project-tools-more-dropdown-menu"]').forEach((menu) => {
+      if (isMoreMenu(menu)) add(menu);
+    });
   new MutationObserver(scan).observe(document.documentElement, { childList: true, subtree: true });
   scan();
 })()`;
