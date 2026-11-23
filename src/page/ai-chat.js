@@ -505,7 +505,9 @@
     st.classList.toggle('error', !!(state && !state.ok));
     head.append(name, st);
     card.appendChild(head);
-    if (state && !state.ok) {
+    // No retry for edits blocked on purpose (read-only mode, .bib files).
+    const blocked = /\.bib$/i.test(edit.file) || (state && /read-only/.test(state.error || ''));
+    if (state && !state.ok && !blocked) {
       const retry = el('button', 'ol-chat-retry', 'Try again');
       retry.type = 'button';
       retry.addEventListener('click', () => applyOne(edit, state, card));
@@ -668,6 +670,13 @@
   // ----------------------------------------------------------- applying ---
 
   async function applyOne(edit, state, card) {
+    // Bibliography files are read-only for the AI, whatever it writes.
+    if (/\.bib$/i.test(edit.file)) {
+      Object.assign(state, { ok: false, error: 'not applied (.bib files are read-only for the AI)', line: null, locked: true });
+      save();
+      if (card) render();
+      return false;
+    }
     const ok = await openPath(edit.file);
     let res;
     if (!ok) res = { ok: false, error: 'File not found in the project.' };

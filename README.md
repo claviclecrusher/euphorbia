@@ -155,6 +155,10 @@ files, as edits to accept or reject) and **Read-only** (it reads and answers but
 does not edit; edits it writes anyway are not applied). Each message carries its
 mode to the model.
 
+`.bib` files are always read-only for the AI: the model is told so and may read
+them, edits it writes for them are never applied, and `Ctrl+K` is turned off in
+them. You can still edit them yourself (including `Ctrl+Shift+K`).
+
 Conversations are kept per project on
 this computer: **+** starts a new one, **☰** lists the earlier ones to reopen or
 delete. Each conversation is its own context; only its messages are sent.

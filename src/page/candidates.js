@@ -448,6 +448,11 @@
 
   function aiEdit(view) {
     if (!editable(view) || !aiBridge()) return false;
+    // Bibliography files are read-only for the AI.
+    if (/\.bib$/i.test(currentFileName())) {
+      window.alert('AI edits are turned off for .bib files: bibliography files are read-only for the AI.');
+      return true;
+    }
     const { state } = view;
     const { first, last, head } = selectedLines(state);
     if (editAt(state, head) || blockAt(state, head) || overlapsAny(state.doc, first.from, last.to)) return true;

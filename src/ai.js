@@ -61,6 +61,8 @@ Rules for edits:
 - Keep each edit small: only the lines that change, plus enough to be unique.
 - Do not put edit blocks inside markdown code fences.
 - Do not edit lines inside %%edit: or %%cand: blocks.
+- Never edit .bib files: they are read-only. You may read them (for example to check citation
+  keys); if a bibliography entry needs changing, tell the user what to change.
 - Keep LaTeX commands, labels, citations and math intact unless asked otherwise.
 - Before the edit blocks, say in one or two sentences what you are changing. The user reviews
   every edit and accepts or rejects it.
@@ -858,6 +860,7 @@ function init(context) {
     const instruction = str(r.instruction, 2000);
     const selection = String(r.selection || '').slice(0, 60000);
     if (!instruction || !selection.trim()) return { ok: false, error: 'Nothing to edit.' };
+    if (/\.bib$/i.test(str(r.fileName, 200))) return { ok: false, error: '.bib files are read-only for the AI.' };
     return runEdit(
       {
         instruction,
