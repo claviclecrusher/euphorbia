@@ -176,9 +176,22 @@ The model does not receive the whole project. It gets an index in which every
 paragraphs, figures, tables, algorithms, equations, theorems), each with an id
 (`main.tex#12`), a line range and a one-line summary; `.bib` files are listed by
 their citation keys. It reads text through tools the app answers from a local copy
-of the project: `read_unit(id)`, `read_file(path, lines)`, `search(text)`,
-`expand(id)` (lists the units inside a file or unit when the index is shortened)
-and `read_history(id)`.
+of the project (the open file is read live):
+
+- `read_unit(ids)`: exact text of one or several units;
+- `read_file(path, lines)`: exact lines;
+- `search(text)`: exact text across the project, each hit labelled with its unit;
+- `find_related(text)`: units about the same topic even with different wording
+  (needs an embedding model, see below);
+- `expand(id)`: the units inside a file or unit when the index is shortened;
+- `read_history(id)`: an older, summarized part of the conversation.
+
+Changes and search results are tool calls too: in Edit mode the model calls
+`propose_edit(file, find, replace)` and in Search mode `mark(file, lines, kind,
+note)`. The app checks each one immediately (the text must exist exactly once,
+not in a `.bib` file or inside an edit/candidates block; lines must exist) and
+tells the model what was wrong, so it can fix the call within the same answer.
+Read mode offers neither tool.
 
 **Summaries.** Set a *summary model* in AI Settings (a local model costs nothing).
 Summaries are written in the background when a project opens and every two
@@ -194,12 +207,28 @@ sent as they are. Older ones are grouped into blocks of up to 8,000 characters a
 replaced by a short summary (summary model, cached); the model can reopen a block
 with `read_history`.
 
+**Related search.** Choose an *embedding model* in AI Settings (for example
+`bge-m3` on the local Ollama server, which handles Korean and English). Each unit
+is embedded in the background, cached by its content like the summaries;
+`find_related` ranks units by meaning plus word overlap. Passages pointed at with
+`Ctrl+L` also bring the most related units into the request automatically.
+
+**Efficiency.** The system prompt and the index are kept byte-identical between
+requests (the open file, older-conversation summaries and related units travel in
+the newest message instead), so Claude's prompt cache covers them across rounds
+and questions. Claude uses effort `high` in Edit and Search mode and `low` in Read
+mode, and the first request is measured with the token-counting API. OpenAI and
+local models stream their answers and tool calls. The project copy is downloaded
+again only when Overleaf reports a newer `lastUpdated`. While a chat runs on the
+local server, background summarizing on that server waits.
+
 **Token limit.** For Claude and OpenAI, a chat request that has used, or is about
 to use, more tokens than the limit in AI Settings (default 200,000) pauses and asks
 **Continue** or **Stop**. Local models are not limited.
 
 **Limits.** read_file returns up to 400 lines, read_unit up to 20,000 characters,
-search up to 40 matches; at most 8 lookup rounds per request; above 60,000
+search up to 40 matches, read_unit up to 12 units per call; at most 10 lookup
+rounds per request; above 60,000
 characters the index lists sections only and `expand` opens the rest. Units are
 summarized from up to 8,000 characters of their text, 8 per call.
 

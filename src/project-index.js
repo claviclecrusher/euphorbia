@@ -190,6 +190,7 @@ function stateFor(serverUrl, projectId) {
     p = {
       dir, serverUrl, projectId,
       builtAt: stored ? stored.builtAt : 0,
+      lastUpdated: stored ? stored.lastUpdated || null : null,
       main: stored ? stored.main : null,
       files: stored ? stored.files : [],
       trees: new Map(), // path -> { hash, tree }
@@ -212,11 +213,46 @@ function treeOf(p, f) {
 
 // Downloads the project and keeps the copy. Only changed files are split
 // again (trees are cached by file hash); summaries are cached by unit hash.
+async function csrfToken(serverUrl) {
+  const res = await session.defaultSession.fetch(`${serverUrl}/dev/csrf`, { credentials: 'include' });
+  const text = res.ok ? (await res.text()).trim() : '';
+  if (/^[\w-]{20,}$/.test(text)) return text;
+  const page = await session.defaultSession.fetch(`${serverUrl}/project`, { credentials: 'include' });
+  const m = (await page.text()).match(/<meta name="ol-csrfToken" content="([^"]+)"/);
+  return m ? m[1] : null;
+}
+
+// The project's lastUpdated from Overleaf's project list, or null.
+async function lastUpdated(p) {
+  try {
+    const token = await csrfToken(p.serverUrl);
+    if (!token) return null;
+    const res = await session.defaultSession.fetch(`${p.serverUrl}/api/project`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token, Accept: 'application/json' },
+      body: JSON.stringify({ page: { size: 1000 } }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const proj = (data.projects || []).find((x) => x.id === p.projectId || x._id === p.projectId);
+    return proj && proj.lastUpdated ? String(proj.lastUpdated) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function refresh(p, { force = false, maxAge = STALE_MS } = {}) {
   if (!force && p.files.length && Date.now() - p.builtAt < maxAge) return p;
   if (p.refreshing) return p.refreshing;
   p.refreshing = (async () => {
     try {
+      // Unchanged since the last download: keep the copy, skip the zip.
+      const stamp = await lastUpdated(p);
+      if (!force && stamp && p.files.length && stamp === p.lastUpdated) {
+        p.builtAt = Date.now();
+        return p;
+      }
       const res = await session.defaultSession.fetch(`${p.serverUrl}/project/${p.projectId}/download/zip`, { credentials: 'include' });
       const type = res.headers.get('content-type') || '';
       if (!res.ok || !/zip|octet-stream/i.test(type)) throw new Error(`Could not download the project to index it (HTTP ${res.status}).`);
@@ -227,8 +263,9 @@ async function refresh(p, { force = false, maxAge = STALE_MS } = {}) {
       const mainFile = p.files.find((f) => /\\documentclass/.test(f.text));
       p.main = mainFile ? mainFile.path : null;
       p.builtAt = Date.now();
+      p.lastUpdated = stamp;
       for (const k of p.trees.keys()) if (!p.files.some((f) => f.path === k)) p.trees.delete(k);
-      writeJson(p.dir, 'files.json', { builtAt: p.builtAt, main: p.main, files: p.files });
+      writeJson(p.dir, 'files.json', { builtAt: p.builtAt, lastUpdated: p.lastUpdated, main: p.main, files: p.files });
       writeJson(p.dir, 'index.md', indexMarkdown(p, p.files, { full: true }));
     } catch (err) {
       if (!p.files.length) throw err; // otherwise keep the last good copy
@@ -301,28 +338,70 @@ function findUnit(p, files, id) {
 
 // --------------------------------------------------------------- workspace ---
 
-// A view for one chat request: the stored files with the open file replaced by
-// its live text, the index, and the tools.
-function workspace(p, openDoc) {
+// Innermost unit containing a line (for labelling search hits).
+function unitAtLine(p, f, line) {
+  indexMarkdown(p, [f], { full: true }); // assigns ids
+  let best = null;
+  const walk = (u) => {
+    for (const c of u.children) {
+      if (line >= c.start && line <= c.end) {
+        best = c;
+        walk(c);
+      }
+    }
+  };
+  walk(treeOf(p, f));
+  return best;
+}
+
+// Line ranges of edit and candidates blocks in a text (1-based, inclusive).
+function blockRanges(text) {
+  const out = [];
+  let open = null;
+  text.split('\n').forEach((l, i) => {
+    if (/^\s*%%(edit|cand):begin\b/.test(l)) open = i + 1;
+    else if (open && /^\s*%%(edit|cand):end\s*$/.test(l)) {
+      out.push([open, i + 1]);
+      open = null;
+    }
+  });
+  return out;
+}
+
+const MARK_KINDS = ['notation', 'experiment', 'theory', 'citation', 'reference'];
+
+// A view for one chat request. The index comes from the stored copy only, so
+// it stays byte-identical between requests (prompt caching); the tools read
+// the open file live. `embed(texts)` returns vectors, or is null.
+function workspace(p, openDoc, { embed = null } = {}) {
   let files = p.files;
   if (openDoc && openDoc.path) {
     const live = { path: openDoc.path, text: openDoc.text };
     files = files.some((f) => f.path === openDoc.path) ? files.map((f) => (f.path === openDoc.path ? live : f)) : [...files, live];
   }
   const byPath = new Map(files.map((f) => [f.path, f]));
-  const index = indexMarkdown(p, files);
+  const fileOf = (x) => byPath.get(String(x || '').replace(/^\.?\//, ''));
+  const accepted = []; // { file, from, to } spans of edits accepted in this request
+
+  const readOne = (id) => {
+    const hit = findUnit(p, files, id);
+    if (!hit) return `No unit ${id}.`;
+    const lines = hit.f.text.split('\n').slice(hit.u.start - 1, hit.u.end).join('\n');
+    const text = lines.length > LIMITS.readUnitChars ? `${lines.slice(0, LIMITS.readUnitChars)}\n[truncated; use read_file for the rest]` : lines;
+    return `${hit.f.path}, lines ${hit.u.start}-${hit.u.end} (${hit.u.kind}) [${id}]:\n${text}`;
+  };
+
   return {
-    index,
+    index: indexMarkdown(p, p.files),
+    hasRelated: !!embed,
     tools: {
-      read_unit({ id }) {
-        const hit = findUnit(p, files, id);
-        if (!hit) return `No unit ${id}.`;
-        const lines = hit.f.text.split('\n').slice(hit.u.start - 1, hit.u.end).join('\n');
-        const text = lines.length > LIMITS.readUnitChars ? `${lines.slice(0, LIMITS.readUnitChars)}\n[truncated; use read_file for the rest]` : lines;
-        return `${hit.f.path}, lines ${hit.u.start}-${hit.u.end} (${hit.u.kind}):\n${text}`;
+      read_unit({ id, ids }) {
+        const list = [...(Array.isArray(ids) ? ids : []), ...(id ? [id] : [])].map(String).slice(0, 12);
+        if (!list.length) return 'Give id or ids.';
+        return list.map(readOne).join('\n\n');
       },
       read_file({ path: filePath, start_line, end_line }) {
-        const f = byPath.get(String(filePath || '').replace(/^\.?\//, ''));
+        const f = fileOf(filePath);
         if (!f) return `No file "${filePath}". Files: ${files.map((x) => x.path).join(', ')}`;
         const lines = f.text.split('\n');
         const a = Math.max(1, Math.floor(Number(start_line) || 1));
@@ -341,10 +420,18 @@ function workspace(p, openDoc) {
         const hits = [];
         for (const f of files) {
           f.text.split('\n').forEach((line, i) => {
-            if (hits.length < LIMITS.searchHits && line.toLowerCase().includes(q)) hits.push(`${f.path}:${i + 1}: ${line.trim().slice(0, 200)}`);
+            if (hits.length < LIMITS.searchHits && line.toLowerCase().includes(q)) {
+              const u = unitAtLine(p, f, i + 1);
+              hits.push(`${f.path}:${i + 1}${u ? ` [${u.id}]` : ''}: ${line.trim().slice(0, 200)}`);
+            }
           });
         }
         return hits.length ? hits.join('\n') + (hits.length === LIMITS.searchHits ? '\n[more matches not shown]' : '') : `No matches for "${query}".`;
+      },
+      async find_related({ text, k }) {
+        if (!embed) return 'Meaning-based search is not set up (no embedding model). Use search instead.';
+        const res = await related(p, files, embed, String(text || ''), Math.min(Math.max(Number(k) || 8, 1), 20));
+        return res.length ? res.map((r) => `[${r.id}] ${r.kind}${r.title ? ` "${r.title}"` : ''} L${r.start}-${r.end} (score ${r.score.toFixed(2)}): ${r.summary}`).join('\n') : 'Nothing related found.';
       },
       expand({ id }) {
         const key = String(id || '');
@@ -358,7 +445,134 @@ function workspace(p, openDoc) {
         return out.join('\n');
       },
     },
+
+    // Checks a proposed edit against the current text. Returns { ok, error } or
+    // { ok, line } and remembers accepted spans to refuse overlapping edits.
+    checkEdit({ file, find, replace }) {
+      const f = fileOf(file);
+      if (!f) return { ok: false, error: `No file "${file}". Files: ${files.map((x) => x.path).join(', ')}` };
+      if (/\.bib$/i.test(f.path)) return { ok: false, error: '.bib files are read-only. Tell the user what to change instead.' };
+      if (!find) return { ok: false, error: 'find is empty.' };
+      if (find === replace) return { ok: false, error: 'replace is the same as find.' };
+      const text = f.text;
+      let at = text.indexOf(find);
+      let len = find.length;
+      if (at >= 0 && text.indexOf(find, at + 1) >= 0) {
+        return { ok: false, error: 'find occurs more than once in the file; include more surrounding lines so it is unique.' };
+      }
+      if (at < 0) {
+        const norm = (t) => t.replace(/[ \t]+$/gm, '');
+        const want = norm(find).split('\n');
+        const lines = text.split('\n');
+        const hits = [];
+        for (let n = 0; n + want.length <= lines.length; n++) if (want.every((w, j) => norm(lines[n + j]) === w)) hits.push(n);
+        if (hits.length !== 1) {
+          return { ok: false, error: hits.length ? 'find occurs more than once in the file.' : 'find was not found in the file. Read the unit again and copy the text exactly (without line numbers).' };
+        }
+        at = lines.slice(0, hits[0]).join('\n').length + (hits[0] ? 1 : 0);
+        len = lines.slice(hits[0], hits[0] + want.length).join('\n').length;
+      }
+      const lineFrom = text.slice(0, at).split('\n').length;
+      const lineTo = lineFrom + text.slice(at, at + len).split('\n').length - 1;
+      if (blockRanges(text).some(([a, b]) => lineFrom <= b && lineTo >= a)) {
+        return { ok: false, error: 'Those lines are inside an edit or candidates block; leave them alone.' };
+      }
+      if (accepted.some((s) => s.file === f.path && lineFrom <= s.to && lineTo >= s.from)) {
+        return { ok: false, error: 'This overlaps an edit you already proposed in this answer; combine them into one edit.' };
+      }
+      accepted.push({ file: f.path, from: lineFrom, to: lineTo });
+      return { ok: true, file: f.path, line: lineFrom };
+    },
+
+    checkMark({ file, start_line, end_line, kind }) {
+      const f = fileOf(file);
+      if (!f) return { ok: false, error: `No file "${file}".` };
+      const n = f.text.split('\n').length;
+      const a = Number(start_line);
+      const b = Number(end_line == null ? start_line : end_line);
+      if (!(a >= 1 && b >= a && b <= n)) return { ok: false, error: `Line range ${start_line}-${end_line} is outside ${f.path} (1-${n}).` };
+      if (!MARK_KINDS.includes(kind)) return { ok: false, error: `kind must be one of ${MARK_KINDS.join(', ')}.` };
+      return { ok: true, file: f.path, start: a, end: b };
+    },
   };
+}
+
+// ------------------------------------------------------------- embeddings ---
+//
+// Each unit's vector (title + summary + the start of its text) is cached by
+// unit hash and embedding model in embeddings.json. find_related ranks units
+// by a mix of vector similarity and word overlap.
+
+const toB64 = (vec) => Buffer.from(new Float32Array(vec).buffer).toString('base64');
+const fromB64 = (s) => {
+  const b = Buffer.from(s, 'base64');
+  return new Float32Array(b.buffer, b.byteOffset, b.length / 4);
+};
+
+function loadEmbeddings(p) {
+  if (!p.embeddings) p.embeddings = readJson(path.join(p.dir, 'embeddings.json'), {});
+  return p.embeddings;
+}
+
+function embedText(p, f, u) {
+  const body = f.text.split('\n').slice(u.start - 1, u.end).join('\n').slice(0, 1500);
+  return `${u.kind}${u.title ? `: ${u.title}` : ''}\n${summaryOf(p, u)}\n${body}`;
+}
+
+function allUnits(p, files) {
+  const out = [];
+  for (const f of files) {
+    if (!/\.tex$/i.test(f.path)) continue;
+    indexMarkdown(p, [f], { full: true });
+    const walk = (u) => u.children.forEach((c) => {
+      if (c.kind !== 'preamble') out.push({ f, u: c });
+      walk(c);
+    });
+    walk(treeOf(p, f));
+  }
+  return out;
+}
+
+// Embeds units that have no vector yet for `model`. Returns how many were added.
+async function embedUnits(p, model, embed, { shouldStop } = {}) {
+  const store = loadEmbeddings(p);
+  const todo = allUnits(p, p.files).filter(({ u }) => !store[`${model}|${u.hash}`]);
+  for (let i = 0; i < todo.length; i += 32) {
+    if (shouldStop && shouldStop()) break;
+    const batch = todo.slice(i, i + 32);
+    const vecs = await embed(batch.map(({ f, u }) => embedText(p, f, u)));
+    batch.forEach(({ u }, j) => {
+      if (vecs[j]) store[`${model}|${u.hash}`] = toB64(vecs[j]);
+    });
+    writeJson(p.dir, 'embeddings.json', store);
+  }
+  return todo.length;
+}
+
+const words = (t) => new Set(String(t).toLowerCase().match(/\\?[a-zÀ-￿][a-z0-9À-￿]{2,}/g) || []);
+
+async function related(p, files, embed, query, k) {
+  const store = loadEmbeddings(p);
+  const units = allUnits(p, files);
+  const [q] = await embed([query]);
+  const qw = words(query);
+  const norm = (v) => Math.sqrt(v.reduce((s, x) => s + x * x, 0)) || 1;
+  const qn = norm(q);
+  const scored = [];
+  for (const { f, u } of units) {
+    const key = Object.keys(store).find((x) => x.endsWith(`|${u.hash}`));
+    if (!key) continue;
+    const v = fromB64(store[key]);
+    let dot = 0;
+    for (let i = 0; i < v.length; i++) dot += v[i] * q[i];
+    const cos = dot / (qn * norm(v));
+    const uw = words(embedText(p, f, u));
+    let overlap = 0;
+    for (const w of qw) if (uw.has(w)) overlap++;
+    const kw = qw.size ? overlap / qw.size : 0;
+    scored.push({ id: u.id, kind: u.kind, title: u.title, start: u.start, end: u.end, summary: summaryOf(p, u), score: 0.75 * cos + 0.25 * kw, leaf: !u.children.length });
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, k);
 }
 
 // ------------------------------------------------------------ summarizing ---
@@ -453,4 +667,4 @@ function stats(p) {
   return { files: p.files.length, chars: p.files.reduce((n, f) => n + f.text.length, 0), units, summarized, builtAt: p.builtAt, main: p.main };
 }
 
-module.exports = { stateFor, refresh, workspace, summarize, estimateTokens, stats, LIMITS };
+module.exports = { stateFor, refresh, workspace, summarize, estimateTokens, stats, embedUnits, LIMITS };

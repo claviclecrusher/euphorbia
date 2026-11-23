@@ -423,10 +423,12 @@
     indexBar.className = 'ol-chat-index';
     if (!st || st.projectId !== projectId) return;
     const units = st.units != null ? `${st.summarized}/${st.units} units summarized` : '';
-    if (st.state === 'summarizing') {
+    if (st.state === 'embedding') {
+      indexBar.textContent = 'Indexing meaning for related-part search\u2026';
+    } else if (st.state === 'summarizing') {
       indexBar.textContent = `Indexing: ${st.done}/${st.total} with ${st.model}\u2026`;
     } else if (st.state === 'ready') {
-      indexBar.textContent = `Index ready \u00b7 ${st.files} files \u00b7 ${units}`;
+      indexBar.textContent = `Index ready \u00b7 ${st.files} files \u00b7 ${units}${st.related ? ' \u00b7 related search on' : ''}`;
     } else if (st.state === 'no-model') {
       indexBar.textContent = `Index without summaries (${st.files} files). `;
       const link = el('button', 'ol-chat-link', 'Choose a summary model');
@@ -571,8 +573,13 @@
       return box;
     }
     if (msg.by) box.appendChild(el('div', 'ol-chat-by', msg.by));
-    const hits = parseHighlights(msg.content);
-    const { parts, edits } = parseEdits(msg.content.replace(HIGHLIGHT_RE, '').replace(/\n{3,}/g, '\n\n'));
+    const hits = Array.isArray(msg.hits) ? msg.hits : parseHighlights(msg.content);
+    const legacy = parseEdits(msg.content.replace(HIGHLIGHT_RE, '').replace(/\n{3,}/g, '\n\n'));
+    // Answers from v0.15 on carry their edits as checked proposals; older ones as text.
+    const parts = Array.isArray(msg.proposals)
+      ? [{ text: msg.content }, ...msg.proposals.map((_, i) => ({ edit: i }))]
+      : legacy.parts;
+    const edits = Array.isArray(msg.proposals) ? msg.proposals : legacy.edits;
     for (const p of parts) {
       if (p.text != null) {
         if (p.text.trim()) box.appendChild(textNode(p.text));
@@ -664,7 +671,7 @@
       requestId: id,
       choiceId: model.value,
       projectId,
-      history: messages.map((mm) => ({ role: mm.role, content: mm.content, refs: mm.refs, mode: mm.mode })),
+      history: messages.map((mm) => ({ role: mm.role, content: mm.content, refs: mm.refs, mode: mm.mode, proposals: mm.proposals, hits: mm.hits })),
       mode,
       openDoc: v ? { path: currentPath(), text: v.state.doc.toString() } : null,
     });
@@ -687,6 +694,7 @@
       setStatus(ev.text, true);
     } else if (ev.type === 'usage') {
       active.used = ev.used;
+      setStatus(`${Math.round(ev.used / 1000)}k tokens so far${ev.cached ? ` (${Math.round(ev.cached / 1000)}k from cache)` : ''}`);
     } else if (ev.type === 'pause') {
       const ask = el('div', 'ol-chat-pause');
       ask.append(
@@ -719,7 +727,7 @@
       setStatus(ev.text, true);
       render();
     } else if (ev.type === 'done') {
-      const msg = { role: 'assistant', content: ev.text, by: ev.by, edits: [], mode: active.mode };
+      const msg = { role: 'assistant', content: ev.text, by: ev.by, edits: [], mode: active.mode, proposals: ev.proposals || [], hits: ev.hits || [] };
       const conv = convs.find((c) => c.id === active.conv);
       if (conv) conv.messages.push(msg);
       active = null;
@@ -845,11 +853,11 @@
 
   async function applyEdits(msg) {
     if (msg.mode === 'search') {
-      const hits = parseHighlights(msg.content);
+      const hits = Array.isArray(msg.hits) ? msg.hits : parseHighlights(msg.content);
       if (hits.length) showSearched(hits, 0);
       else setStatus('No related places were marked.');
     }
-    const { edits } = parseEdits(msg.content.replace(HIGHLIGHT_RE, ''));
+    const edits = Array.isArray(msg.proposals) ? msg.proposals : parseEdits(msg.content.replace(HIGHLIGHT_RE, '')).edits;
     if (!edits.length) return;
     if (msg.mode === 'read' || msg.mode === 'search') {
       // Read and search modes never touch the files, even if the model wrote edits anyway.

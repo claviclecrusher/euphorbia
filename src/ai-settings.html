@@ -72,6 +72,11 @@
     <label class="f" for="summary">Summary model (writes the one-line summaries in the project index and of older chat messages)</label>
     <select id="summary" style="width:100%;padding:6px;font-size:13px;border:1px solid #afb5c0;border-radius:6px"></select>
     <div class="note">Runs in the background for every part of a project that changed. A local model costs nothing. Without one, the index shows each part's first sentence.</div>
+    <label class="f" for="embprov">Embedding model (finds related parts by meaning, for the chat's find_related)</label>
+    <div class="row"><select id="embprov" style="padding:6px;font-size:13px;border:1px solid #afb5c0;border-radius:6px">
+      <option value="">(none)</option><option value="local">Local server</option><option value="openai">OpenAI</option></select>
+      <input id="embmodel" type="text" spellcheck="false" placeholder="e.g. bge-m3 (Ollama) or text-embedding-3-small"></div>
+    <div class="note">Computed in the background for every part of a project that changed. bge-m3 on a local server handles Korean and English.</div>
     <label class="f" for="limit">Token limit per chat request (paid APIs)</label>
     <input id="limit" type="text" spellcheck="false" placeholder="200000">
     <div class="note">A request that would go over this pauses and asks whether to continue. A first summary pass over this size asks too.</div>
@@ -105,12 +110,18 @@
     for (const c of s.choices || []) sel.add(new Option(c.label, c.id, false, c.id === s.summary));
     if (s.summary && !(s.choices || []).some((c) => c.id === s.summary)) sel.add(new Option(`${s.summary} (not available)`, s.summary, false, true));
     document.getElementById('limit').value = s.tokenLimit;
+    document.getElementById('embprov').value = (s.embedding && s.embedding.provider) || '';
+    document.getElementById('embmodel').value = (s.embedding && s.embedding.model) || '';
     document.getElementById('enc').textContent = s.encrypted ? 'Keys are encrypted with the system keychain.'
       : 'No system keychain is available: keys are stored unencrypted in the app settings file.';
   }
 
   function form() {
-    const f = { summary: document.getElementById('summary').value, tokenLimit: document.getElementById('limit').value };
+    const f = {
+      summary: document.getElementById('summary').value,
+      tokenLimit: document.getElementById('limit').value,
+      embedding: { provider: document.getElementById('embprov').value, model: document.getElementById('embmodel').value },
+    };
     for (const p of P) {
       f[p] = { models: el(p, 'models').value, key: el(p, 'key').value, clearKey: clear[p] };
       if (p === 'local') f[p].baseURL = el(p, 'baseURL').value;
