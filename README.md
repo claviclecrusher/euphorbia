@@ -221,8 +221,15 @@ Conversations are kept per project on
 this computer: **+** starts a new one, **☰** lists the earlier ones to reopen or
 delete. Each conversation is its own context; only its messages are sent.
 
+The conversation stays when you switch models: the app keeps it and sends it to
+whichever model is selected. A newly selected model has no prompt cache for it,
+though, so its first message reads the instructions, the index and the
+conversation in full. Switching to a paid model in a conversation that already has
+messages therefore asks first, with an estimate of that cost; starting a new chat
+(**+**) avoids it.
+
 The model does not receive the whole project. It gets an index in which every
-`.tex` file is split into units (sections, subsections, `\\paragraph`s, text
+`.tex` file is split into units (sections, subsections, `\paragraph`s, text
 paragraphs, figures, tables, algorithms, equations, theorems), each with an id
 (`main.tex#12`), a line range and a one-line summary; `.bib` files are listed by
 their citation keys. It reads text through tools the app answers from a local copy
@@ -285,18 +292,6 @@ summarized from up to 8,000 characters of their text, 8 per call.
 The copy of the project (`files.json`), the summaries (`summaries.json`), older
 chat summaries (`history.json`) and a readable `index.md` are kept per project in
 the app's data folder under `ai-index/`.
-
-Conversations are kept per project on
-this computer: **+** starts a new one, **☰** lists the earlier ones to reopen or
-delete. Each conversation is its own context; only its messages are sent.
-
-The model does not receive the whole project. It gets an index: each file's
-sections with line ranges and first sentence, labels, `\input`s and citation keys.
-It reads what it needs with two tools, `read_file(path, start_line, end_line)` and
-`search(query)`, which the app answers from a copy of the project (rebuilt from
-the project zip when older than two minutes, or with **↻**; the open file is
-always read live). The copy and its `index.md` are kept in the app's data folder
-under `ai-index/`.
 
 Developer Tools moved from `Ctrl+Shift+I` to `F12`.
 
