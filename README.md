@@ -1,4 +1,8 @@
-# Overleaf Desktop
+# Euphorbia
+
+<img src="build/icon.svg" width="96" alt="Euphorbia icon: a Sotetsukirin">
+
+*Euphorbia is an unofficial project. It is not affiliated with, endorsed by or sponsored by Overleaf or Digital Science; "Overleaf" is used only to name the servers it connects to.*
 
 An Electron desktop client for Overleaf servers: a self-hosted Community Edition
 instance, overleaf.com, or both. Compiling and project storage stay on the server,
@@ -10,10 +14,10 @@ Download an installer from the [latest release](https://github.com/claviclecrush
 
 | Platform | File | Updates |
 |---|---|---|
-| Windows | `overleaf-desktop-setup-<version>.exe` | automatic |
-| Windows, no install | `overleaf-desktop-portable-<version>.exe` | notification only |
-| Linux | `overleaf-desktop-<version>.AppImage` | automatic |
-| Debian/Ubuntu | `overleaf-desktop_<version>_amd64.deb` | notification only |
+| Windows | `euphorbia-setup-<version>.exe` | automatic |
+| Windows, no install | `euphorbia-portable-<version>.exe` | notification only |
+| Linux | `euphorbia-<version>.AppImage` | automatic |
+| Debian/Ubuntu | `euphorbia_<version>_amd64.deb` | notification only |
 
 The Windows executables are not code-signed, so SmartScreen warns on first run:
 choose **More info → Run anyway**.
@@ -55,7 +59,7 @@ The copy contains the project's files. History, comments, tracked changes and
 collaborators are not copied, and the target server's upload size limit applies.
 
 The server list and window position are stored in `config.json` in the user data
-folder (`~/.config/Overleaf Desktop/` on Linux, `%APPDATA%\Overleaf Desktop\` on
+folder (`~/.config/Euphorbia/` on Linux, `%APPDATA%\Euphorbia\` on
 Windows).
 
 ## Editor tabs
@@ -221,8 +225,35 @@ Conversations are kept per project on
 this computer: **+** starts a new one, **☰** lists the earlier ones to reopen or
 delete. Each conversation is its own context; only its messages are sent.
 
+**Hybrid: song-1.** With both a local model and a Claude connection, the chat's
+model menu also offers `song-1`. It is prompt management, not a model:
+
+1. The local model (the summary model if it is local, else the first local model)
+   answers; the draft streams into the chat.
+2. The local model reviews the request and the draft against a fixed rubric and
+   scores difficulty and quality from 1 to 5.
+3. If quality is 3 or less (or the review is unreadable, the draft is empty, or its
+   edits could not be placed), the draft is replaced: Claude Opus 5.5 at effort
+   low takes over. Otherwise the local answer stands (no cost).
+4. For a hard request (difficulty 4 or more), Opus first plans up to four
+   read-only subtasks, the local model does them with the read tools, and Opus
+   then answers with the draft, the review and those results as unverified notes
+   it checks with its own tools. (Planning by the large model and execution by the
+   small one follows Minions, ICML 2025.)
+
+Only the final answer's edits and marks reach the files. The answer's byline says
+which way it went and the scores. A self-review by a small model is a weak signal,
+so the rule leans towards handing over.
+
+The conversation stays when you switch models: the app keeps it and sends it to
+whichever model is selected. A newly selected model has no prompt cache for it,
+though, so its first message reads the instructions, the index and the
+conversation in full. Switching to a paid model in a conversation that already has
+messages therefore asks first, with an estimate of that cost; starting a new chat
+(**+**) avoids it.
+
 The model does not receive the whole project. It gets an index in which every
-`.tex` file is split into units (sections, subsections, `\\paragraph`s, text
+`.tex` file is split into units (sections, subsections, `\paragraph`s, text
 paragraphs, figures, tables, algorithms, equations, theorems), each with an id
 (`main.tex#12`), a line range and a one-line summary; `.bib` files are listed by
 their citation keys. It reads text through tools the app answers from a local copy
@@ -266,8 +297,8 @@ is embedded in the background, cached by its content like the summaries;
 **Efficiency.** The system prompt and the index are kept byte-identical between
 requests (the open file, older-conversation summaries and related units travel in
 the newest message instead), so Claude's prompt cache covers them across rounds
-and questions. Claude uses effort `high` in Edit and Search mode and `low` in Read
-mode, and the first request is measured with the token-counting API. OpenAI and
+and questions. Claude runs at the effort chosen in AI Settings (`low` by default,
+for chat, Ctrl+K and summaries alike), and the first request is measured with the token-counting API. OpenAI and
 local models stream their answers and tool calls. The project copy is downloaded
 again only when Overleaf reports a newer `lastUpdated`. While a chat runs on the
 local server, background summarizing on that server waits.
@@ -286,18 +317,6 @@ The copy of the project (`files.json`), the summaries (`summaries.json`), older
 chat summaries (`history.json`) and a readable `index.md` are kept per project in
 the app's data folder under `ai-index/`.
 
-Conversations are kept per project on
-this computer: **+** starts a new one, **☰** lists the earlier ones to reopen or
-delete. Each conversation is its own context; only its messages are sent.
-
-The model does not receive the whole project. It gets an index: each file's
-sections with line ranges and first sentence, labels, `\input`s and citation keys.
-It reads what it needs with two tools, `read_file(path, start_line, end_line)` and
-`search(query)`, which the app answers from a copy of the project (rebuilt from
-the project zip when older than two minutes, or with **↻**; the open file is
-always read live). The copy and its `index.md` are kept in the app's data folder
-under `ai-index/`.
-
 Developer Tools moved from `Ctrl+Shift+I` to `F12`.
 
 ## Updates
@@ -305,8 +324,10 @@ Developer Tools moved from `Ctrl+Shift+I` to `F12`.
 On startup the app checks the latest published GitHub release; **File → Check for
 Updates…** checks on demand. Drafts and pre-releases are ignored.
 
-- Windows installer and AppImage: the update downloads in the background, then the
-  app offers to restart. The Windows installer runs silently and keeps the existing
+- Windows installer and AppImage: at startup the update downloads in the
+  background, then the app offers to restart. **File → Check for Updates…** goes
+  all the way without asking: it downloads (progress on the taskbar icon), installs
+  and restarts the app. The Windows installer runs silently and keeps the existing
   install location.
 - Windows portable and `.deb`: the app shows a notification with a link to the
   releases page.
@@ -335,3 +356,13 @@ next to the installers, or the updater cannot find the new version.
 - On Ubuntu 24.04 and later the AppImage may not start without `--no-sandbox`
   because AppArmor restricts user namespaces, and it needs `libfuse2`. The `.deb`
   sets up the sandbox correctly.
+
+## License
+
+Euphorbia is free software: you can redistribute it and/or modify it under the
+terms of the GNU Affero General Public License, version 3, as published by the
+Free Software Foundation. See [`LICENSE`](LICENSE). It contains no Overleaf code;
+Overleaf Community Edition is also licensed under the AGPL-3.0.
+
+The app was called *Overleaf Desktop* before version 0.21. Updating keeps your
+settings: the old data folder is moved to the new name on first start.

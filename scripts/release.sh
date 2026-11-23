@@ -25,7 +25,7 @@ rm -rf dist
 npx electron-builder --linux AppImage deb --publish never
 
 # NSIS needs wine, so the Windows build runs in the electron-builder container.
-cache="${XDG_CACHE_HOME:-$HOME/.cache}/overleaf-desktop-builder"
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/euphorbia-builder"
 mkdir -p "$cache"
 docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp/home \
   -v "$cache":/tmp/home -v "$PWD":"$PWD" -w "$PWD" \
@@ -33,11 +33,11 @@ docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp/home \
   npx electron-builder --win nsis portable --publish never
 
 assets=(
-  "dist/overleaf-desktop-setup-$version.exe"
-  "dist/overleaf-desktop-setup-$version.exe.blockmap"
-  "dist/overleaf-desktop-portable-$version.exe"
-  "dist/overleaf-desktop-$version.AppImage"
-  "dist/overleaf-desktop_${version}_amd64.deb"
+  "dist/euphorbia-setup-$version.exe"
+  "dist/euphorbia-setup-$version.exe.blockmap"
+  "dist/euphorbia-portable-$version.exe"
+  "dist/euphorbia-$version.AppImage"
+  "dist/euphorbia_${version}_amd64.deb"
   "dist/latest.yml"
   "dist/latest-linux.yml"
 )

@@ -484,6 +484,11 @@ function workspace(p, openDoc, { embed = null } = {}) {
       return { ok: true, file: f.path, line: lineFrom };
     },
 
+    // Forget the edits accepted so far (song-1: the local draft's edits are discarded).
+    resetEdits() {
+      accepted.length = 0;
+    },
+
     checkMark({ file, start_line, end_line, kind }) {
       const f = fileOf(file);
       if (!f) return { ok: false, error: `No file "${file}".` };

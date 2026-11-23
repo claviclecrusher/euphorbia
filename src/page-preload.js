@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('overleafDesktop', {
     chatContinue: (requestId, go) => ipcRenderer.send('ai:chat-continue', requestId, go),
     listEdits: (projectId) => ipcRenderer.invoke('ai:list-edits', projectId),
     usage: (provider) => ipcRenderer.invoke('ai:usage', provider),
+    switchCost: (req) => ipcRenderer.invoke('ai:switch-cost', req),
     sendRef: (ref) => ipcRenderer.send('ai:ref', ref),
     onRef: (callback) => ipcRenderer.on('ai:ref', (_e, ref) => callback(ref)),
   },
@@ -46,5 +47,5 @@ try {
   const script = ipcRenderer.sendSync('page:early-script');
   if (script) webFrame.executeJavaScript(script);
 } catch (err) {
-  console.error('[overleaf-desktop] early script failed', err);
+  console.error('[euphorbia] early script failed', err);
 }

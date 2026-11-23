@@ -939,7 +939,7 @@
     try {
       event.detail.extensions.push(buildExtension(event.detail.CodeMirror));
     } catch (err) {
-      console.error('[overleaf-desktop] candidates extension failed to load', err);
+      console.error('[euphorbia] candidates extension failed to load', err);
     }
   });
 

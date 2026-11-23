@@ -1,12 +1,12 @@
 {
-  "name": "overleaf-desktop",
-  "productName": "Overleaf Desktop",
-  "version": "0.19.0",
-  "description": "Desktop client for a self-hosted Overleaf Community Edition server",
+  "name": "euphorbia",
+  "productName": "Euphorbia",
+  "version": "0.21.0",
+  "description": "Euphorbia: an unofficial desktop client for Overleaf servers (self-hosted Community Edition or overleaf.com)",
   "homepage": "https://github.com/claviclecrusher/overleaf-desktop",
   "main": "src/main.js",
-  "license": "MIT",
-  "author": "overleaf-desktop",
+  "license": "AGPL-3.0-only",
+  "author": "Euphorbia contributors",
   "scripts": {
     "start": "electron .",
     "dist:linux": "electron-builder --linux AppImage deb --publish never",
@@ -17,7 +17,8 @@
     "appId": "local.overleaf.desktop",
     "files": [
       "src/**/*",
-      "package.json"
+      "package.json",
+      "LICENSE"
     ],
     "directories": {
       "output": "dist",
@@ -29,7 +30,8 @@
         "AppImage",
         "deb"
       ],
-      "maintainer": "overleaf-desktop"
+      "maintainer": "Euphorbia contributors",
+      "executableName": "euphorbia"
     },
     "win": {
       "target": [
@@ -40,7 +42,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "overleaf-desktop-setup-${version}.${ext}"
+      "artifactName": "euphorbia-setup-${version}.${ext}"
     },
     "publish": [
       {
@@ -50,11 +52,15 @@
       }
     ],
     "appImage": {
-      "artifactName": "overleaf-desktop-${version}.${ext}"
+      "artifactName": "euphorbia-${version}.${ext}"
     },
     "portable": {
-      "artifactName": "overleaf-desktop-portable-${version}.${ext}"
-    }
+      "artifactName": "euphorbia-portable-${version}.${ext}"
+    },
+    "deb": {
+      "artifactName": "euphorbia_${version}_amd64.${ext}"
+    },
+    "icon": "build/icon.png"
   },
   "devDependencies": {
     "electron": "^33.4.11",

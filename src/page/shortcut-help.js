@@ -1,4 +1,4 @@
-// Runs in the Overleaf page. Appends an "Overleaf-Desktop Native Shortcut"
+// Runs in the Overleaf page. Appends an "Euphorbia Native Shortcuts"
 // section to Help → Keyboard shortcuts, below Overleaf's own shortcuts.
 (() => {
   if (window.__overleafDesktopShortcutHelp) return;
@@ -21,7 +21,7 @@
     section.className = 'ol-desktop-hotkeys';
     section.style.marginTop = '24px';
     const h = document.createElement('h3');
-    h.textContent = 'Overleaf-Desktop Native Shortcut';
+    h.textContent = 'Euphorbia Native Shortcuts';
     section.appendChild(h);
     for (const [combination, description] of KEYS) {
       const row = document.createElement('div');

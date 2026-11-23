@@ -18,6 +18,8 @@ const usage = require('./usage');
 const { DEFAULT_STYLE } = require('./writing-style');
 
 const PROVIDERS = ['claude', 'openai', 'local'];
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const SONG1_PAID = 'claude-opus-5-5';
 const PROVIDER_NAME = { claude: 'Claude', openai: 'OpenAI', local: 'Local' };
 const DEFAULTS = {
   claude: { models: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'] },
@@ -128,6 +130,7 @@ function settings() {
   }
   out.summary = typeof s.summary === 'string' ? s.summary : '';
   out.styleEnabled = s.styleEnabled !== false;
+  out.effort = EFFORTS.includes(s.effort) ? s.effort : 'low';
   out.style = typeof s.style === 'string' && s.style.trim() ? s.style : DEFAULT_STYLE;
   out.embedding = s.embedding && typeof s.embedding === 'object'
     ? { provider: String(s.embedding.provider || ''), model: String(s.embedding.model || '') }
@@ -165,7 +168,7 @@ function publicSettings() {
   const s = settings();
   const out = {
     encrypted: safeStorage.isEncryptionAvailable(), summary: s.summary, tokenLimit: s.tokenLimit, embedding: s.embedding, choices: choices(s),
-    styleEnabled: s.styleEnabled, style: s.style, defaultStyle: DEFAULT_STYLE,
+    styleEnabled: s.styleEnabled, style: s.style, defaultStyle: DEFAULT_STYLE, effort: s.effort,
   };
   for (const p of PROVIDERS) {
     out[p] = { models: s[p].models, hasKey: !!openKey(s[p].key), ...(p === 'local' ? { baseURL: s[p].baseURL } : {}) };
@@ -182,6 +185,7 @@ function applyForm(form) {
   delete next.provider;
   if (form && typeof form.summary === 'string') next.summary = str(form.summary, 300);
   if (form && typeof form.styleEnabled === 'boolean') next.styleEnabled = form.styleEnabled;
+  if (form && EFFORTS.includes(form.effort)) next.effort = form.effort;
   if (form && typeof form.style === 'string') {
     const st = form.style.replace(/\r\n/g, '\n').slice(0, 20000);
     // The default is stored as '' so that later improvements to it reach the user.
@@ -213,18 +217,32 @@ function applyForm(form) {
 }
 
 // Models offered in the editor: every model of every usable connection.
-function choices(s = settings()) {
+function choices(s = settings(), opts = {}) {
   const out = [];
   for (const p of PROVIDERS) {
     if (!usable(s, p)) continue;
     for (const m of s[p].models) out.push({ id: `${p}:${m}`, provider: p, model: m, label: `${PROVIDER_NAME[p]} · ${m}` });
   }
+  if (opts.hybrid && song1Parts(s)) {
+    out.push({ id: 'hybrid:song-1', provider: 'hybrid', model: 'song-1', label: 'Hybrid · song-1 (local model first, Claude Opus 5.5 when needed)' });
+  }
   return out;
+}
+
+// song-1 needs a local model and a Claude connection. The local model is the
+// summary model when that is local, else the first local model.
+function song1Parts(s = settings()) {
+  if (!usable(s, 'local') || !s.local.models.length || !usable(s, 'claude')) return null;
+  const local = s.summary && s.summary.startsWith('local:') && s.local.models.includes(s.summary.slice(6)) ? s.summary.slice(6) : s.local.models[0];
+  return {
+    local: { s, provider: 'local', model: local, id: `local:${local}` },
+    paid: { s, provider: 'claude', model: SONG1_PAID, id: `claude:${SONG1_PAID}`, effort: 'low' },
+  };
 }
 
 function resolve(choiceId, purpose) {
   const s = settings();
-  const list = choices(s);
+  const list = choices(s, { hybrid: purpose === 'chat' });
   const pick = list.find((c) => c.id === choiceId) || list.find((c) => c.id === s.selected[purpose]) || list[0];
   if (!pick) throw new Error('No AI model is set up. Add an API connection in File > AI Settings.');
   return { s, ...pick };
@@ -249,6 +267,17 @@ function openaiClient(s, provider) {
   const key = openKey(entry.key);
   if (provider === 'openai' && !key) throw new Error('No OpenAI API key. Add one in File > AI Settings.');
   return new OpenAI({ apiKey: key || 'local', ...(provider === 'local' ? { baseURL: entry.baseURL } : {}) });
+}
+
+// Claude effort from AI Settings (default low) for models that take it. Opus 4.5
+// accepts only low/medium/high.
+const effortSupported = (model) => /^claude-(fable|mythos|opus-5|opus-4-[5-8]|sonnet-5|sonnet-4-6|haiku-5)/.test(model);
+function withEffort(model, params, forced) {
+  if (!effortSupported(model)) return params;
+  let effort = forced || settings().effort;
+  if (/^claude-opus-4-5/.test(model) && (effort === 'xhigh' || effort === 'max')) effort = 'high';
+  params.output_config = { ...(params.output_config || {}), effort };
+  return params;
 }
 
 function withFallbacks(model, params) {
@@ -293,7 +322,7 @@ async function complete(pick, system, messages, signal) {
   if (pick.provider === 'claude') {
     const client = anthropicClient(pick.s);
     const response = await client.beta.messages.create(
-      withFallbacks(pick.model, { model: pick.model, max_tokens: 16000, system, messages }),
+      withFallbacks(pick.model, withEffort(pick.model, { model: pick.model, max_tokens: 16000, system, messages }, pick.effort)),
       { signal }
     );
     if (response.stop_reason === 'refusal') {
@@ -729,85 +758,170 @@ function releaseIndexing(projectId) {
 
 // --------------------------------------------------------------- chat: run ---
 
+// ------------------------------------------------------------------ song-1 ---
+//
+// A hybrid that manages prompts, not a model of its own:
+//   1. the local model answers (draft, streamed to the user);
+//   2. the local model reviews question + draft with a fixed rubric and scores
+//      difficulty and quality (1-5);
+//   3. quality <= 3, an unreadable review, an empty draft or failed edit calls
+//      hand the question to Claude Opus 5.5 at effort low;
+//   4. for a hard question (difficulty >= 4), Opus first writes a short plan of
+//      read-only subtasks (Minions, ICML 2025: the large model plans, the small
+//      one executes), the local model runs them with the read tools, and Opus
+//      answers with the draft, the review and the subtask results as unverified
+//      notes, checking them with its own tools.
+// Only the final answer's edits and marks reach the files.
+
+const SONG1_MAX_SUBTASKS = 4;
+
+function lastQuestion(history) {
+  const h = Array.isArray(history) ? history : [];
+  for (let i = h.length - 1; i >= 0; i--) if (h[i] && h[i].role === 'user') return String(h[i].content || '').slice(0, 6000);
+  return '';
+}
+
+function parseJson(text) {
+  const t = String(text || '').replace(/<think>[\s\S]*?<\/think>/g, '');
+  const m = t.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[0]);
+  } catch {
+    return null;
+  }
+}
+
+const proposalsText = (list) =>
+  list.map((p, i) => `${i + 1}. ${p.file}: replace ${JSON.stringify(String(p.find || '').slice(0, 300))} with ${JSON.stringify(String(p.replace || '').slice(0, 600))}`).join('\n');
+
+const JUDGE_PROMPT = `You review an answer written by an AI assistant for a researcher working on a LaTeX paper in Overleaf. Another model wrote it; do not assume it is right.
+
+Score two things from 1 to 5.
+difficulty — how hard the request is:
+1 a lookup or a one-line fact; 2 a short local edit or explanation; 3 several places or careful wording; 4 reasoning across the paper, math, or a substantial rewrite; 5 deep technical reasoning or a long multi-part change.
+quality — how well the answer serves the request:
+5 complete and correct, nothing to add; 4 correct with small gaps; 3 partly right, misses part of the request or is vague; 2 mostly wrong, off-topic or unsupported; 1 empty, refuses, or broken.
+
+Lower the quality score when the answer: ignores part of the request; claims things about the paper it did not look up; contradicts itself; gives math or LaTeX that is wrong; was asked to change files but proposes no edits or edits that do not do what was asked; was asked to find places but lists none.
+
+Reply with JSON only: {"difficulty": n, "quality": n, "missing": "what is wrong or missing, one or two sentences"}`;
+
+const PLAN_PROMPT = `You plan work for a small local model that will help answer a request about a LaTeX paper. The local model can read the project (read units, read files, search, find related text) but writes nothing. Split out up to ${SONG1_MAX_SUBTASKS} self-contained subtasks it can do well: finding and quoting the relevant passages, collecting definitions or notation, listing where something is used, summarizing a section. Leave reasoning, judgement, math and the final wording to yourself. Each subtask must make sense on its own, without the conversation.
+
+Reply with JSON only: {"subtasks": ["...", "..."]} (an empty list if nothing is worth handing off).`;
+
+async function song1(c) {
+  const { s, mode, ws, messages, prompt, defs, tools, out, send, checkBudget, signal, acct, question } = c;
+  const parts = song1Parts(s);
+  if (!parts) throw new Error('song-1 needs a local model and a Claude connection (File > AI Settings).');
+  const free = async () => true;
+
+  // 1. local draft, streamed so the user can read it while it is checked.
+  send('status', { text: `song-1: local draft (${parts.local.model})…`, model: parts.local.model });
+  const draftOut = { proposals: [], hits: [] };
+  const draft = await agentLoop({ pick: parts.local, prompt, ws, messages, defs, tools, out: draftOut, send, checkBudget: free, signal, acct });
+
+  // 2. review by the local model.
+  send('status', { text: 'song-1: reviewing the draft…' });
+  const work = [];
+  if (draftOut.proposals.length) work.push(`Edits it proposed:\n${proposalsText(draftOut.proposals)}`);
+  if (draftOut.hits.length) work.push(`Places it marked: ${draftOut.hits.length}`);
+  if (draftOut.failed) work.push(`Tool calls that failed: ${draftOut.failed}`);
+  let review = null;
+  try {
+    const r = await complete(parts.local, JUDGE_PROMPT, [{
+      role: 'user',
+      content: `Mode: ${mode} (${mode === 'edit' ? 'the assistant may propose file edits' : mode === 'search' ? 'the assistant should find and mark places' : 'read only, answer in words'}).\n\nRequest:\n<request>\n${question}\n</request>\n\nAnswer:\n<answer>\n${draft.text.slice(0, 12000)}\n</answer>\n${work.join('\n\n')}`,
+    }], signal);
+    review = parseJson(r.text);
+  } catch (err) {
+    if (signal.aborted) throw err;
+  }
+  const num = (v) => Math.min(5, Math.max(1, Math.round(Number(v)) || 0));
+  const difficulty = review ? num(review.difficulty) : 3;
+  const quality = review ? num(review.quality) : 0;
+  const missing = review && review.missing ? String(review.missing).slice(0, 600) : '';
+  const reasons = [];
+  if (!review || !quality) reasons.push('the review could not be read');
+  else if (quality <= 3) reasons.push(`quality ${quality}/5`);
+  if (!draft.text.trim() && !draftOut.proposals.length && !draftOut.hits.length) reasons.push('empty draft');
+  if (mode === 'edit' && draftOut.failed && !draftOut.proposals.length) reasons.push('its edits could not be placed');
+  const scores = review ? `difficulty ${difficulty}/5, quality ${quality}/5` : 'no review';
+
+  if (!reasons.length) {
+    Object.assign(out, draftOut);
+    out.by = `song-1 (${parts.local.model}; ${scores})`;
+    return draft;
+  }
+
+  // 3. hand over to Opus.
+  ws.resetEdits();
+  send('reset', { text: `song-1: handing this to ${SONG1_PAID} (${reasons.join(', ')})…` });
+  const notes = [
+    `[song-1] A local model (${parts.local.model}) answered this request first; a review found it lacking (${scores}${missing ? `: ${missing}` : ''}). Its draft and any notes below are unverified: check them with the tools before relying on them, and write the full answer yourself (the user sees only your answer${mode === 'edit' ? ', and only your propose_edit calls are applied' : ''}).`,
+    `<local-draft>\n${draft.text.slice(0, 8000)}\n</local-draft>`,
+  ];
+  if (draftOut.proposals.length) notes.push(`<local-draft-edits>\n${proposalsText(draftOut.proposals)}\n</local-draft-edits>`);
+
+  if (difficulty >= 4) {
+    // 4. Opus plans read-only subtasks; the local model runs them.
+    const planSystem = [
+      { type: 'text', text: PLAN_PROMPT },
+      { type: 'text', text: ws.index },
+    ];
+    const planMsg = `Request:\n<request>\n${question}\n</request>\n\nWhat the review found missing in a first attempt: ${missing || 'unspecified'}`;
+    if (await checkBudget(estimate(PLAN_PROMPT.length + ws.index.length + planMsg.length), true)) {
+      send('status', { text: `song-1: ${SONG1_PAID} is planning…` });
+      let subtasks = [];
+      try {
+        const r = await complete(parts.paid, planSystem, [{ role: 'user', content: planMsg }], signal);
+        const j = parseJson(r.text);
+        subtasks = (j && Array.isArray(j.subtasks) ? j.subtasks : []).map((t) => String(t).slice(0, 1500)).filter(Boolean).slice(0, SONG1_MAX_SUBTASKS);
+      } catch (err) {
+        if (signal.aborted) throw err;
+      }
+      const readDefs = toolsFor('read', ws.hasRelated);
+      const results = [];
+      for (let i = 0; i < subtasks.length; i++) {
+        send('status', { text: `song-1: local subtask ${i + 1}/${subtasks.length}…` });
+        const quiet = (type, payload) => {
+          if (type === 'status' || type === 'pause') send(type, payload);
+        };
+        try {
+          const r = await agentLoop({
+            pick: parts.local, prompt, ws, defs: readDefs, tools, out: { proposals: [], hits: [] }, send: quiet, checkBudget: free, signal, acct,
+            messages: [{ role: 'user', content: `${subtasks[i]}\n\nAnswer briefly and quote the exact text with its unit ids or file:line.` }],
+          });
+          results.push(`<subtask n="${i + 1}">\n<task>${subtasks[i]}</task>\n<local-result>\n${r.text.slice(0, 4000)}\n</local-result>\n</subtask>`);
+        } catch (err) {
+          if (signal.aborted) throw err;
+        }
+      }
+      if (results.length) notes.push(`Subtasks you planned, done by the local model (unverified):\n${results.join('\n')}`);
+    }
+  }
+
+  // 5. Opus answers with the original tools.
+  const final = messages.map((m) => ({ ...m }));
+  const last = final[final.length - 1];
+  last.content = `${notes.join('\n\n')}\n\n${last.content}`;
+  const paidCheck = (n) => checkBudget(n, true);
+  send('status', { text: `song-1: ${SONG1_PAID} is answering…`, model: SONG1_PAID });
+  const r = await agentLoop({ pick: parts.paid, prompt, ws, messages: final, defs, tools, out, send, checkBudget: paidCheck, signal, acct });
+  out.by = `song-1 → ${SONG1_PAID} (${reasons.join(', ')}; local ${scores})`;
+  return { text: r.text, rounds: draft.rounds + r.rounds, stopped: r.stopped };
+}
+
 const pauses = new Map(); // `${sender.id}:${requestId}` -> resolve(boolean)
 const estimate = (chars) => Math.ceil(chars / 3.5);
-const supportsEffort = (model) => /^claude-(fable|mythos|opus-5|opus-4-[5-8]|sonnet-5|sonnet-4-6|haiku-5)/.test(model);
 
-async function runChat(sender, req) {
-  const id = req.requestId;
-  const send = (type, payload = {}) => {
-    if (!sender.isDestroyed()) sender.send('ai:chat-event', { id, type, ...payload });
-  };
-  const controller = new AbortController();
-  const key = `chat:${sender.id}:${id}`;
-  running.set(key, controller);
-  let held = false;
-  try {
-    const pick = resolve(req.choiceId, 'chat');
-    const s = pick.s;
-    const mode = ['edit', 'read', 'search'].includes(req.mode) ? req.mode : 'edit';
-    const metered = pick.provider !== 'local';
-    if (pick.provider === 'local') {
-      holdIndexing(req.projectId);
-      held = true;
-    }
-    let allowance = s.tokenLimit;
-    let used = 0;
-    // Pauses before a call that would go over the allowance; resolves false to stop.
-    const checkBudget = async (nextTokens) => {
-      if (!metered || used + nextTokens <= allowance) return true;
-      send('pause', { used, next: nextTokens, limit: s.tokenLimit });
-      const go = await new Promise((r) => pauses.set(`${sender.id}:${id}`, r));
-      pauses.delete(`${sender.id}:${id}`);
-      if (go) allowance = used + nextTokens + s.tokenLimit;
-      send('status', { text: go ? 'Continuing…' : 'Stopped at your request.' });
-      return go;
-    };
-
-    send('status', { text: 'Reading the project index…', model: pick.model });
-    const p = projectIndex.stateFor(ctx.getConfig().current, req.projectId);
-    await projectIndex.refresh(p);
-    const embed = embedderFor(controller.signal);
-    const ws = projectIndex.workspace(p, req.openDoc, { embed });
-
-    send('status', { text: 'Preparing the conversation…' });
-    const sumPick = summaryPick();
-    const { recent, blocks } = await compactHistory(req.history || [], summarizerFor(sumPick, controller.signal), require('path').join(p.dir, 'history.json'));
-    const messages = chatMessages(recent);
-    if (!messages.length) throw new Error('Nothing to send.');
-
-    // Things that change between requests go into the newest user message, after
-    // the cached prefix (system prompt + index), so the prefix stays identical.
-    const extras = [];
-    if (req.openDoc && req.openDoc.path) extras.push(`The file open in the editor is ${req.openDoc.path} (it may differ from the index; read it before relying on exact text).`);
-    if (blocks.length) {
-      extras.push(`Earlier in this conversation (summarized; call read_history with the id to read a part in full):\n${blocks.map((b) => `[${b.id}] messages ${b.from}-${b.to}: ${b.summary}`).join('\n')}`);
-    }
-    const lastRefs = ((req.history || []).slice(-1)[0] || {}).refs || [];
-    if (embed && lastRefs.length) {
-      try {
-        const rel = await ws.tools.find_related({ text: lastRefs.map((r) => r.text).join('\n').slice(0, 4000), k: 6 });
-        extras.push(`Units that may relate to the referenced passage (meaning-based search):\n${rel}`);
-      } catch {
-        /* optional */
-      }
-    }
-    if (extras.length) {
-      const last = messages[messages.length - 1];
-      last.content = `${extras.join('\n\n')}\n\n${last.content}`;
-    }
-
-    const defs = toolsFor(mode, ws.hasRelated);
-    const prompt = chatPrompt();
-    const tools = {
-      ...ws.tools,
-      read_history: ({ id: hid }) => {
-        const b = blocks.find((x) => x.id === hid);
-        return b ? b.text : `No history block ${hid}. Blocks: ${blocks.map((x) => x.id).join(', ') || 'none'}`;
-      },
-    };
-    const out = { proposals: [], hits: [] };
-
+// One model answering with tools until it stops: streams text through send,
+// collects proposals/hits in out. Returns { text, rounds, stopped }.
+async function agentLoop({ pick, prompt, ws, messages, defs, tools, out, send, checkBudget, signal, acct }) {
+  const s = pick.s;
+  const metered = pick.provider !== 'local';
+  const controller = { signal };
     let text = '';
     let rounds = 0;
     let stopped = false;
@@ -820,7 +934,7 @@ async function runChat(sender, req) {
       // Client tools streamed with eager input; inputs are validated in runTool.
       const toolParams = defs.map((t) => ({ ...t, eager_input_streaming: true }));
       const msgs = messages.slice();
-      const effort = supportsEffort(pick.model) ? { output_config: { effort: mode === 'read' ? 'low' : 'high' } } : {};
+      const effort = withEffort(pick.model, {}, pick.effort);
 
       // Exact size of the first request when the API can tell; else an estimate.
       let first = estimate(prompt.length + ws.index.length + JSON.stringify(msgs).length + JSON.stringify(defs).length);
@@ -856,8 +970,8 @@ async function runChat(sender, req) {
         const u = final.usage || {};
         usage.record('claude', final.model || pick.model, usage.fromAnthropic(u));
         const turn = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.output_tokens || 0);
-        used += turn;
-        send('usage', { used, cached: u.cache_read_input_tokens || 0 });
+        acct.used += turn;
+        send('usage', { used: acct.used, cached: u.cache_read_input_tokens || 0 });
         if (final.stop_reason === 'refusal') {
           const why = final.stop_details && final.stop_details.explanation;
           throw new Error(`The model declined this request.${why ? ` ${why}` : ''}`);
@@ -878,6 +992,7 @@ async function runChat(sender, req) {
           if (block.type !== 'tool_use') continue;
           send('status', { text: toolStatus(block.name, block.input) });
           const r = await runTool(ws, tools, defs, block.name, block.input, out);
+          if (!r.ok) out.failed = (out.failed || 0) + 1;
           results.push({ type: 'tool_result', tool_use_id: block.id, content: r.text, ...(r.ok ? {} : { is_error: true }) });
         }
         msgs.push({ role: 'user', content: results });
@@ -931,8 +1046,8 @@ async function runChat(sender, req) {
         const list = calls.filter(Boolean);
         if (usage_) usage.record(pick.provider, pick.model, usage.fromOpenAI(usage_));
         const turn = usage_ ? (usage_.prompt_tokens || 0) + (usage_.completion_tokens || 0) : estimate(JSON.stringify(msgs).length + content.length);
-        used += turn;
-        send('usage', { used });
+        acct.used += turn;
+        send('usage', { used: acct.used });
         msgs.push({ role: 'assistant', content: content || '', ...(list.length ? { tool_calls: list } : {}) });
         if (!list.length) {
           if (finish === 'length') send('notice', { text: 'The answer was cut off at the length limit.' });
@@ -952,6 +1067,7 @@ async function runChat(sender, req) {
           }
           send('status', { text: toolStatus(call.function.name, input) });
           const r = input ? await runTool(ws, tools, defs, call.function.name, input, out) : { text: 'Invalid input: arguments are not valid JSON' };
+          if (!r.ok) out.failed = (out.failed || 0) + 1;
           msgs.push({ role: 'tool', tool_call_id: call.id, content: r.text });
           added += r.text.length;
         }
@@ -961,11 +1077,97 @@ async function runChat(sender, req) {
         }
       }
     }
+    return { text, rounds, stopped };
+}
+
+async function runChat(sender, req) {
+  const id = req.requestId;
+  const send = (type, payload = {}) => {
+    if (!sender.isDestroyed()) sender.send('ai:chat-event', { id, type, ...payload });
+  };
+  const controller = new AbortController();
+  const key = `chat:${sender.id}:${id}`;
+  running.set(key, controller);
+  let held = false;
+  try {
+    const pick = resolve(req.choiceId, 'chat');
+    const s = pick.s;
+    const mode = ['edit', 'read', 'search'].includes(req.mode) ? req.mode : 'edit';
+    const metered = pick.provider === 'claude' || pick.provider === 'openai';
+    if (pick.provider === 'local' || pick.provider === 'hybrid') {
+      holdIndexing(req.projectId);
+      held = true;
+    }
+    let allowance = s.tokenLimit;
+    const acct = { used: 0 };
+    // Pauses before a paid call that would go over the allowance; resolves false to stop.
+    const checkBudget = async (nextTokens, paid = metered) => {
+      const used = acct.used;
+      if (!paid || used + nextTokens <= allowance) return true;
+      send('pause', { used, next: nextTokens, limit: s.tokenLimit });
+      const go = await new Promise((r) => pauses.set(`${sender.id}:${id}`, r));
+      pauses.delete(`${sender.id}:${id}`);
+      if (go) allowance = used + nextTokens + s.tokenLimit;
+      send('status', { text: go ? 'Continuing…' : 'Stopped at your request.' });
+      return go;
+    };
+
+    send('status', { text: 'Reading the project index…', model: pick.model });
+    const p = projectIndex.stateFor(ctx.getConfig().current, req.projectId);
+    await projectIndex.refresh(p);
+    const embed = embedderFor(controller.signal);
+    const ws = projectIndex.workspace(p, req.openDoc, { embed });
+
+    send('status', { text: 'Preparing the conversation…' });
+    const sumPick = summaryPick();
+    const { recent, blocks } = await compactHistory(req.history || [], summarizerFor(sumPick, controller.signal), require('path').join(p.dir, 'history.json'));
+    const messages = chatMessages(recent);
+    if (!messages.length) throw new Error('Nothing to send.');
+
+    // Things that change between requests go into the newest user message, after
+    // the cached prefix (system prompt + index), so the prefix stays identical.
+    const extras = [];
+    if (req.openDoc && req.openDoc.path) extras.push(`The file open in the editor is ${req.openDoc.path} (it may differ from the index; read it before relying on exact text).`);
+    if (blocks.length) {
+      extras.push(`Earlier in this conversation (summarized; call read_history with the id to read a part in full):\n${blocks.map((b) => `[${b.id}] messages ${b.from}-${b.to}: ${b.summary}`).join('\n')}`);
+    }
+    const lastRefs = ((req.history || []).slice(-1)[0] || {}).refs || [];
+    if (embed && lastRefs.length) {
+      try {
+        const rel = await ws.tools.find_related({ text: lastRefs.map((r) => r.text).join('\n').slice(0, 4000), k: 6 });
+        extras.push(`Units that may relate to the referenced passage (meaning-based search):\n${rel}`);
+      } catch {
+        /* optional */
+      }
+    }
+    if (extras.length) {
+      const last = messages[messages.length - 1];
+      last.content = `${extras.join('\n\n')}\n\n${last.content}`;
+    }
+
+    const defs = toolsFor(mode, ws.hasRelated);
+    const prompt = chatPrompt();
+    const tools = {
+      ...ws.tools,
+      read_history: ({ id: hid }) => {
+        const b = blocks.find((x) => x.id === hid);
+        return b ? b.text : `No history block ${hid}. Blocks: ${blocks.map((x) => x.id).join(', ') || 'none'}`;
+      },
+    };
+    const out = { proposals: [], hits: [] };
+
+    let text, rounds, stopped;
+    const common = { prompt, ws, messages, defs, tools, out, send, checkBudget, signal: controller.signal, acct };
+    if (pick.provider === 'hybrid') {
+      ({ text, rounds, stopped } = await song1({ ...common, s, mode, question: lastQuestion(req.history) }));
+    } else {
+      ({ text, rounds, stopped } = await agentLoop({ ...common, pick }));
+    }
     if (!text.trim() && !out.proposals.length && !out.hits.length) {
       throw new Error(stopped ? 'Stopped before the model answered.' : 'The model returned an empty answer.');
     }
     if (stopped) send('notice', { text: 'Stopped at the token limit; the answer may be incomplete.' });
-    send('done', { text, by: `AI (${pick.model})`, lookups: rounds, used, proposals: out.proposals, hits: out.hits });
+    send('done', { text, by: out.by || `AI (${pick.model})`, lookups: rounds, used: acct.used, proposals: out.proposals, hits: out.hits });
   } catch (err) {
     send('error', { text: friendly(err) });
   } finally {
@@ -1003,6 +1205,7 @@ function showSettings() {
   }
   const parent = ctx.getMainWindow();
   settingsWindow = new BrowserWindow({
+    icon: require('path').join(__dirname, 'icon.png'),
     width: 600,
     height: 880,
     minHeight: 500,
@@ -1078,6 +1281,30 @@ function init(context) {
 
   // ---- from the editor
 
+  // What switching the chat to another model costs on its next message: the
+  // new model has no prompt cache yet, so it reads the instructions, the
+  // project index and the conversation in full (and writes them to its cache).
+  ipcMain.handle('ai:switch-cost', async (event, req) => {
+    if (!fromServer(event) || !req || !/^[0-9a-f]{24}$/.test(String(req.projectId))) return null;
+    let pick = choices(settings(), { hybrid: true }).find((c) => c.id === req.choiceId);
+    if (!pick) return null;
+    if (pick.provider === 'local') return { paid: false };
+    // song-1 pays only when it hands the question to Claude.
+    if (pick.provider === 'hybrid') pick = { ...pick, model: SONG1_PAID, label: `${pick.label}; when it hands a question to ${SONG1_PAID}` };
+    let indexChars = 0;
+    try {
+      const p = projectIndex.stateFor(ctx.getConfig().current, String(req.projectId));
+      if (p.files.length) indexChars = projectIndex.workspace(p, null).index.length;
+    } catch {
+      /* no copy yet */
+    }
+    const historyChars = Math.min(Number(req.historyChars) || 0, 20000 + 4000); // recent part + summaries
+    const tokens = Math.ceil((chatPrompt().length + indexChars + historyChars) / 3.5);
+    const price = usage.priceOf(pick.model);
+    const cost = price ? (tokens * price[0] * 1.25) / 1e6 : null;
+    return { paid: true, model: pick.model, label: pick.label, tokens, cost };
+  });
+
   // This month's estimated spending, for the label next to the chat's model menu.
   ipcMain.handle('ai:usage', (event, provider) => {
     if (!fromServer(event)) return null;
@@ -1087,15 +1314,15 @@ function init(context) {
   ipcMain.handle('ai:info', (event, purpose) => {
     if (!fromServer(event)) return null;
     const s = settings();
-    const list = choices(s);
     const p = purpose === 'chat' ? 'chat' : 'edit';
+    const list = choices(s, { hybrid: p === 'chat' });
     const selected = list.find((c) => c.id === s.selected[p]) ? s.selected[p] : list[0] ? list[0].id : null;
     return { choices: list, selected };
   });
 
   ipcMain.on('ai:select', (event, purpose, choiceId) => {
     if (!fromServer(event) || !['edit', 'chat'].includes(purpose)) return;
-    if (choices().some((c) => c.id === choiceId)) remember(purpose, choiceId);
+    if (choices(settings(), { hybrid: purpose === 'chat' }).some((c) => c.id === choiceId)) remember(purpose, choiceId);
   });
 
   ipcMain.handle('ai:edit', async (event, request) => {

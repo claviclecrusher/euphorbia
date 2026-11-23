@@ -238,7 +238,7 @@
         )
       );
     } catch (err) {
-      console.error('[overleaf-desktop] chat shortcut failed to load', err);
+      console.error('[euphorbia] chat shortcut failed to load', err);
     }
   });
 
@@ -265,6 +265,45 @@
   const title = el('span', 'ol-chat-title', 'AI Chat');
   const model = el('select', 'ol-chat-model');
   model.title = 'Model';
+  // Switching to a paid model in a conversation that already has messages
+  // costs a full, uncached read on the next message: ask first. Runs before
+  // the other change listeners and lets them run only when the switch stands.
+  let modelValue = '';
+  let confirmingSwitch = false;
+  model.addEventListener('change', async (e) => {
+    if (confirmingSwitch) return;
+    const next = model.value;
+    const prev = modelValue;
+    if (!prev || next === prev || !messages.length || next.startsWith('local:')) {
+      modelValue = next;
+      return;
+    }
+    e.stopImmediatePropagation();
+    const info = await ai.switchCost({
+      projectId,
+      choiceId: next,
+      historyChars: messages.reduce((n, m) => n + String(m.content || '').length, 0),
+    });
+    if (info && info.paid) {
+      const tokens = info.tokens >= 1000 ? `${Math.round(info.tokens / 1000)}k` : String(info.tokens);
+      const cost = info.cost != null ? `, about $${info.cost < 0.01 ? '0.01 or less' : info.cost.toFixed(2)}` : '';
+      const ok = window.confirm(
+        `Switch to ${info.label}?\n\nThis conversation already has messages. A new model has no cache for them yet, ` +
+        `so your next message re-reads the instructions, the project index and the conversation in full ` +
+        `(about ${tokens} tokens${cost}). Later messages are cheaper again.\n\n` +
+        `To avoid this, start a new chat (+) with the new model.`
+      );
+      if (!ok) {
+        model.value = prev;
+        return;
+      }
+    }
+    modelValue = next;
+    // Let the regular handlers see the confirmed switch.
+    confirmingSwitch = true;
+    model.dispatchEvent(new Event('change'));
+    confirmingSwitch = false;
+  }, true);
   const reindex = el('button', 'ol-chat-icon', '↻');
   reindex.title = 'Re-read the project now';
   const history = el('button', 'ol-chat-icon', '\u2630');
@@ -313,7 +352,8 @@
   const fmtCost = (c) => (c < 0.01 && c > 0 ? '<$0.01' : `$${c.toFixed(2)}`);
   // Estimated from the token usage this app saw; other apps using the key are not included.
   async function updateSpend() {
-    const provider = (model.value || '').split(':')[0];
+    let provider = (model.value || '').split(':')[0];
+    if (provider === 'hybrid') provider = 'claude'; // song-1 pays only for Claude
     if (!provider) {
       spend.textContent = '';
       return;
@@ -403,6 +443,7 @@
     };
     showTitle();
     model.onchange = showTitle;
+    modelValue = model.value;
     updateSpend();
     return true;
   }
@@ -765,6 +806,11 @@
       active.el.appendChild(ask);
       list.scrollTop = list.scrollHeight;
       setStatus('Paused: waiting for your answer.');
+    } else if (ev.type === 'reset') {
+      // song-1 replaced the local draft: the stronger model's answer follows.
+      active.text = '';
+      active.body.textContent = '';
+      setStatus(ev.text);
     } else if (ev.type === 'delta') {
       active.text += ev.text;
       // Edit blocks are shown as cards once complete; while streaming, hide them.

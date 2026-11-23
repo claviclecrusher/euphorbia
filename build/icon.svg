@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Euphorbia 'Sotetsukirin' (괴마옥), one colour: an egg-shaped body, wide at
+       the base, covered in pointed tubercles in a diamond lattice, with a small
+       tuft of thin leaves at the tip. Details are cut out. -->
+  <defs>
+    <pattern id="tub" width="92" height="64" patternUnits="userSpaceOnUse" x="20" y="14">
+      <!-- grooves between tubercles -->
+      <path d="M46 0 L92 32 L46 64 L0 32 Z" fill="none" stroke="#000" stroke-width="9" stroke-linejoin="round"/>
+      <!-- each tubercle's pointed tip -->
+      <path d="M46 12 L54 24 L46 30 L38 24 Z" fill="#000"/>
+      <path d="M0 44 L8 56 L0 62 L-8 56 Z M92 44 L100 56 L92 62 L84 56 Z" fill="#000"/>
+    </pattern>
+    <mask id="cut">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <rect x="250" y="300" width="524" height="680" fill="url(#tub)"/>
+    </mask>
+  </defs>
+  <g fill="#2f5d3a">
+    <!-- leaves: short, narrow, filled, fanning from the tip -->
+    <path d="M496 364 C420 334 330 334 236 366 C326 312 420 316 506 348 Z"/>
+    <path d="M528 364 C604 334 694 334 788 366 C698 312 604 316 518 348 Z"/>
+    <path d="M494 380 C430 330 350 300 270 300 C360 270 440 300 512 366 Z"/>
+    <path d="M530 380 C594 330 674 300 754 300 C664 270 584 300 512 366 Z"/>
+    <path d="M500 374 C462 310 410 250 350 200 C430 220 490 280 522 362 Z"/>
+    <path d="M524 374 C562 310 614 250 674 200 C594 220 534 280 502 362 Z"/>
+    <path d="M512 368 C488 300 490 220 512 150 C534 220 536 300 512 368 Z"/>
+    <!-- body: an upright oval, a little fuller below the middle, rounded at both ends -->
+    <path mask="url(#cut)" d="M512 340 C620 340 690 440 700 600 C710 780 660 950 512 950 C364 950 314 780 324 600 C334 440 404 340 512 340 Z"/>
+  </g>
+</svg>
