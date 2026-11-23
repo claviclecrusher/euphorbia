@@ -115,21 +115,59 @@
 
   // -------------------------------------------------------------- state ---
 
+  // Conversations per project: { convs: [{ id, title, updatedAt, messages }], current }.
+  // Each conversation is its own context: only its messages are sent.
   const KEY = `ol-desktop-chat:${projectId}`;
-  let messages = [];
+  const MAX_CONVS = 50;
+  const newId = () => Math.random().toString(36).slice(2, 10);
+  const titleOf = (msgs) => {
+    const u = msgs.find((x) => x.role === 'user');
+    return u ? u.content.replace(/\s+/g, ' ').slice(0, 60) : 'New chat';
+  };
+  let convs = [];
+  let currentId = null;
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY) || '[]');
-    if (Array.isArray(saved)) messages = saved;
+    const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (Array.isArray(saved) && saved.length) {
+      // 0.11 kept a single conversation as a plain array.
+      convs = [{ id: newId(), title: titleOf(saved), updatedAt: Date.now(), messages: saved }];
+      currentId = convs[0].id;
+    } else if (saved && Array.isArray(saved.convs)) {
+      convs = saved.convs.filter((c) => c && Array.isArray(c.messages));
+      currentId = convs.some((c) => c.id === saved.current) ? saved.current : null;
+    }
   } catch {
     /* ignore */
   }
+  const currentConv = () => convs.find((c) => c.id === currentId) || null;
+  // `messages` is the open conversation's list (a new, unsaved one until the first message).
+  let messages = currentConv() ? currentConv().messages : [];
   const save = () => {
+    const conv = currentConv();
+    if (conv) {
+      conv.updatedAt = Date.now();
+      conv.messages = messages = messages.slice(-100);
+    }
+    convs.sort((a, b) => b.updatedAt - a.updatedAt);
+    convs = convs.slice(0, MAX_CONVS);
     try {
-      localStorage.setItem(KEY, JSON.stringify(messages.slice(-100)));
+      localStorage.setItem(KEY, JSON.stringify({ convs, current: currentId }));
     } catch {
       /* ignore */
     }
   };
+  function openConv(id) {
+    currentId = id;
+    const conv = currentConv();
+    messages = conv ? conv.messages : [];
+    showingList = false;
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ convs, current: currentId }));
+    } catch {
+      /* ignore */
+    }
+  }
+  let showingList = false;
   let pendingRefs = [];
   let active = null; // { id, el, text }
 
@@ -206,9 +244,12 @@
   model.title = 'Model';
   const reindex = el('button', 'ol-chat-icon', '↻');
   reindex.title = 'Re-read the project now';
+  const history = el('button', 'ol-chat-icon', '\u2630');
+  history.title = 'Conversations';
   const newChat = el('button', 'ol-chat-icon', '+');
   newChat.title = 'New chat';
-  header.append(toggle, title, model, reindex, newChat);
+  header.append(toggle, title, model, reindex, history, newChat);
+  const indexBar = el('div', 'ol-chat-index');
   const list = el('div', 'ol-chat-list');
   const status = el('div', 'ol-chat-status');
   const composer = el('div', 'ol-chat-composer');
@@ -218,7 +259,7 @@
   input.rows = 3;
   const send = el('button', 'ol-chat-send', 'Send');
   composer.append(refsRow, input, send);
-  panel.append(handle, header, list, status, composer);
+  panel.append(handle, header, indexBar, list, status, composer);
   for (const b of panel.querySelectorAll('button')) b.type = 'button';
 
   const HEIGHT_KEY = 'ol-desktop-chat-height';
@@ -276,15 +317,95 @@
     setStatus(res && res.ok ? `Indexed ${res.files} file(s), ${Math.round(res.chars / 1000)}k characters.` : (res && res.error) || 'Indexing failed.');
   });
 
+  // A new chat keeps the previous ones; it is saved once its first message is sent.
   newChat.addEventListener('click', () => {
     if (active) return;
-    messages = [];
+    openConv(null);
     pendingRefs = [];
-    save();
     render();
     renderRefs();
     setStatus('');
+    input.focus();
   });
+
+  history.addEventListener('click', () => {
+    if (active) return;
+    showingList = !showingList;
+    render();
+  });
+
+  function renderConvList() {
+    const head = el('div', 'ol-chat-list-head', convs.length ? 'Conversations' : 'No saved conversations yet.');
+    list.appendChild(head);
+    for (const c of convs.slice().sort((a, b) => b.updatedAt - a.updatedAt)) {
+      const row = el('div', 'ol-chat-conv' + (c.id === currentId ? ' current' : ''));
+      const open = el('button', 'ol-chat-conv-open');
+      open.type = 'button';
+      open.appendChild(el('span', 'ol-chat-conv-title', c.title || 'Untitled'));
+      const d = new Date(c.updatedAt);
+      const p2 = (n) => String(n).padStart(2, '0');
+      open.appendChild(el('span', 'ol-chat-conv-meta',
+        `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())} \u00b7 ${c.messages.length} message(s)`));
+      open.addEventListener('click', () => {
+        openConv(c.id);
+        pendingRefs = [];
+        render();
+        renderRefs();
+        setStatus('');
+      });
+      const del = el('button', 'ol-chat-conv-del', '\u00d7');
+      del.type = 'button';
+      del.title = 'Delete this conversation';
+      del.addEventListener('click', () => {
+        if (!window.confirm(`Delete "${c.title || 'Untitled'}"?`)) return;
+        convs = convs.filter((x) => x !== c);
+        if (currentId === c.id) openConv(null);
+        showingList = true;
+        save();
+        render();
+      });
+      row.append(open, del);
+      list.appendChild(row);
+    }
+  }
+
+  // Background index status from the app.
+  function renderIndex(st) {
+    indexBar.textContent = '';
+    indexBar.className = 'ol-chat-index';
+    if (!st || st.projectId !== projectId) return;
+    const units = st.units != null ? `${st.summarized}/${st.units} units summarized` : '';
+    if (st.state === 'summarizing') {
+      indexBar.textContent = `Indexing: ${st.done}/${st.total} with ${st.model}\u2026`;
+    } else if (st.state === 'ready') {
+      indexBar.textContent = `Index ready \u00b7 ${st.files} files \u00b7 ${units}`;
+    } else if (st.state === 'no-model') {
+      indexBar.textContent = `Index without summaries (${st.files} files). `;
+      const link = el('button', 'ol-chat-link', 'Choose a summary model');
+      link.type = 'button';
+      link.addEventListener('click', () => ai.openSettings());
+      indexBar.appendChild(link);
+    } else if (st.state === 'needs-approval') {
+      indexBar.classList.add('ask');
+      indexBar.append(
+        `Summarizing ${st.estimate.units} parts of this project with ${st.model} needs about ${Math.round(st.estimate.tokens / 1000)}k tokens. `
+      );
+      const yes = el('button', 'ol-chat-btn', 'Summarize');
+      const no = el('button', 'ol-chat-btn secondary', 'Not now');
+      yes.type = no.type = 'button';
+      yes.addEventListener('click', () => ai.indexApprove(projectId, true));
+      no.addEventListener('click', () => ai.indexApprove(projectId, false));
+      indexBar.append(yes, no);
+    } else if (st.state === 'declined') {
+      indexBar.textContent = `Summaries not made; the index shows first sentences. ${units}`;
+    } else if (st.state === 'error') {
+      indexBar.textContent = `Index: ${st.error}`;
+      indexBar.classList.add('error');
+    }
+  }
+  ai.onIndexStatus(renderIndex);
+  ai.projectOpen(projectId);
+  setInterval(() => ai.projectOpen(projectId), 2 * 60 * 1000);
 
   function setStatus(text, isError) {
     status.textContent = text || '';
@@ -396,6 +517,11 @@
 
   function render() {
     list.textContent = '';
+    history.classList.toggle('on', showingList);
+    if (showingList) {
+      renderConvList();
+      return;
+    }
     if (!messages.length) {
       list.appendChild(el('div', 'ol-chat-empty', 'Ask about this project or ask for a change. Select lines and press Ctrl+L to point at them.'));
     }
@@ -410,6 +536,7 @@
     send.classList.toggle('stop', busy);
     model.disabled = busy;
     newChat.disabled = busy;
+    history.disabled = busy;
   }
 
   function submit() {
@@ -423,6 +550,13 @@
       setStatus('No AI model is set up yet. Open File > AI Settings.', true);
       return;
     }
+    if (!currentConv()) {
+      const conv = { id: newId(), title: text.replace(/\s+/g, ' ').slice(0, 60), updatedAt: Date.now(), messages: [] };
+      convs.unshift(conv);
+      currentId = conv.id;
+      messages = conv.messages;
+    }
+    showingList = false;
     messages.push({ role: 'user', content: text, refs: pendingRefs.slice() });
     pendingRefs = [];
     input.value = '';
@@ -436,7 +570,7 @@
     bubble.appendChild(body);
     list.appendChild(bubble);
     list.scrollTop = list.scrollHeight;
-    active = { id, el: bubble, body, text: '' };
+    active = { id, el: bubble, body, text: '', conv: currentId };
     setBusy(true);
     ai.chatStart({
       requestId: id,
@@ -462,6 +596,26 @@
       setStatus(ev.text + (ev.omitted ? ` (${ev.omitted} large file(s) given as outline only)` : ''));
     } else if (ev.type === 'notice') {
       setStatus(ev.text, true);
+    } else if (ev.type === 'usage') {
+      active.used = ev.used;
+    } else if (ev.type === 'pause') {
+      const ask = el('div', 'ol-chat-pause');
+      ask.append(
+        `This request has used ${Math.round(ev.used / 1000)}k tokens; the next step needs about ${Math.round(ev.next / 1000)}k more (limit ${Math.round(ev.limit / 1000)}k). `
+      );
+      const go = el('button', 'ol-chat-btn', 'Continue');
+      const stop = el('button', 'ol-chat-btn secondary', 'Stop');
+      go.type = stop.type = 'button';
+      const answer = (yes) => {
+        ask.remove();
+        ai.chatContinue(ev.id, yes);
+      };
+      go.addEventListener('click', () => answer(true));
+      stop.addEventListener('click', () => answer(false));
+      ask.append(go, stop);
+      active.el.appendChild(ask);
+      list.scrollTop = list.scrollHeight;
+      setStatus('Paused: waiting for your answer.');
     } else if (ev.type === 'delta') {
       active.text += ev.text;
       // Edit blocks are shown as cards once complete; while streaming, hide them.
@@ -477,7 +631,8 @@
       render();
     } else if (ev.type === 'done') {
       const msg = { role: 'assistant', content: ev.text, by: ev.by, edits: [] };
-      messages.push(msg);
+      const conv = convs.find((c) => c.id === active.conv);
+      if (conv) conv.messages.push(msg);
       active = null;
       setBusy(false);
       save();
@@ -559,6 +714,16 @@
     .ol-chat-icon { font: inherit; font-size: 13px; line-height: 1; color: inherit; background: none; border: 0; border-radius: 4px;
       padding: 3px 5px; cursor: pointer; opacity: .75; }
     .ol-chat-icon:hover { opacity: 1; background: rgba(255,255,255,.1); }
+    .ol-chat-icon.on { opacity: 1; background: rgba(9,136,66,.5); }
+    .ol-chat-list-head { font-size: 11px; opacity: .6; padding: 4px 2px; }
+    .ol-chat-conv { display: flex; align-items: stretch; border-radius: 6px; margin: 2px 0; }
+    .ol-chat-conv:hover { background: rgba(255,255,255,.07); }
+    .ol-chat-conv.current { background: rgba(9,136,66,.22); }
+    .ol-chat-conv-open { flex: 1; min-width: 0; text-align: left; font: inherit; color: inherit; background: none; border: 0; padding: 5px 6px; cursor: pointer; }
+    .ol-chat-conv-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ol-chat-conv-meta { display: block; font-size: 10px; opacity: .55; }
+    .ol-chat-conv-del { font: inherit; color: inherit; background: none; border: 0; padding: 0 8px; cursor: pointer; opacity: .5; }
+    .ol-chat-conv-del:hover { opacity: 1; }
     .ol-chat-list { flex: 1 1 auto; overflow-y: auto; padding: 4px 6px; min-height: 0; }
     .ol-chat-empty { opacity: .6; padding: 8px 2px; line-height: 1.4; }
     .ol-chat-msg { margin: 6px 0; padding: 6px 8px; border-radius: 6px; line-height: 1.45; }
@@ -580,6 +745,15 @@
     .ol-chat-edit-state.ok { color: #5fd38d; opacity: 1; }
     .ol-chat-edit-state.error { color: #ff8a80; opacity: 1; }
     .ol-chat-retry { font: inherit; font-size: 10px; color: inherit; background: rgba(255,255,255,.12); border: 0; border-radius: 8px; padding: 1px 6px; cursor: pointer; }
+    .ol-chat-index { flex: 0 0 auto; padding: 1px 8px 3px; font-size: 10px; opacity: .65; }
+    .ol-chat-index:empty { display: none; }
+    .ol-chat-index.ask { opacity: 1; font-size: 11px; background: rgba(255,193,7,.15); padding: 5px 8px; }
+    .ol-chat-index.error { color: #ff8a80; opacity: 1; }
+    .ol-chat-link { font: inherit; color: #7cc4ff; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+    .ol-chat-btn { font: inherit; font-size: 11px; border: 0; border-radius: 10px; padding: 2px 10px; margin: 3px 4px 0 0; background: #098842; color: #fff; cursor: pointer; }
+    .ol-chat-btn.secondary { background: rgba(255,255,255,.18); }
+    .ol-chat-pause { margin-top: 6px; padding: 6px; border-radius: 4px; background: rgba(255,193,7,.15); font-size: 11px; }
+    .ol-chat.collapsed .ol-chat-index { display: none; }
     .ol-chat-status { flex: 0 0 auto; padding: 2px 8px; font-size: 11px; opacity: .7; }
     .ol-chat-status:empty { display: none; }
     .ol-chat-status.error { color: #ff8a80; opacity: 1; }
