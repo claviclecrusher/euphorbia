@@ -1,29 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Euphorbia 'Sotetsukirin' (괴마옥), one colour: a stem covered in diamond
-       tubercles under a crown of short, narrow leaves. Details are cut out. -->
+  <!-- Euphorbia 'Sotetsukirin' (괴마옥), one colour: an egg-shaped body, wide at
+       the base, covered in pointed tubercles in a diamond lattice, with a small
+       tuft of thin leaves at the tip. Details are cut out. -->
   <defs>
-    <pattern id="tub" width="100" height="70" patternUnits="userSpaceOnUse" x="12" y="20">
-      <path d="M50 0 L100 35 L50 70 L0 35 Z" fill="none" stroke="#000" stroke-width="10" stroke-linejoin="round"/>
-      <circle cx="50" cy="19" r="6" fill="#000"/><circle cx="0" cy="54" r="6" fill="#000"/><circle cx="100" cy="54" r="6" fill="#000"/>
+    <pattern id="tub" width="92" height="64" patternUnits="userSpaceOnUse" x="20" y="14">
+      <!-- grooves between tubercles -->
+      <path d="M46 0 L92 32 L46 64 L0 32 Z" fill="none" stroke="#000" stroke-width="9" stroke-linejoin="round"/>
+      <!-- each tubercle's pointed tip -->
+      <path d="M46 12 L54 24 L46 30 L38 24 Z" fill="#000"/>
+      <path d="M0 44 L8 56 L0 62 L-8 56 Z M92 44 L100 56 L92 62 L84 56 Z" fill="#000"/>
     </pattern>
     <mask id="cut">
       <rect width="1024" height="1024" fill="#fff"/>
-      <!-- tubercle grooves on the stem -->
-      <rect x="270" y="430" width="484" height="520" fill="url(#tub)"/>
+      <rect x="250" y="300" width="524" height="680" fill="url(#tub)"/>
     </mask>
   </defs>
-  <g transform="translate(512 512) scale(1.22) translate(-512 -580)">
-  <g fill="#2f5d3a" mask="url(#cut)">
-    <!-- leaves: narrow, radiating, short -->
-    <path d="M496 444 C420 414 330 414 236 446 C326 392 420 396 506 428 Z"/>
-    <path d="M528 444 C604 414 694 414 788 446 C698 392 604 396 518 428 Z"/>
-    <path d="M494 460 C430 410 350 380 270 380 C360 350 440 380 512 446 Z"/>
-    <path d="M530 460 C594 410 674 380 754 380 C664 350 584 380 512 446 Z"/>
-    <path d="M500 454 C462 390 410 330 350 280 C430 300 490 360 522 442 Z"/>
-    <path d="M524 454 C562 390 614 330 674 280 C594 300 534 360 502 442 Z"/>
-    <path d="M512 448 C488 380 490 300 512 230 C534 300 536 380 512 448 Z"/>
-    <!-- stem: short, round, barrel-like -->
-    <path d="M512 440 C660 440 740 520 740 680 C740 850 660 930 512 930 C364 930 284 850 284 680 C284 520 364 440 512 440 Z"/>
-  </g>
+  <g fill="#2f5d3a">
+    <!-- leaf tuft: short, needle-thin, fanning from the tip -->
+    <g stroke="#2f5d3a" stroke-width="13" stroke-linecap="round" fill="none">
+      <path d="M502 318 C482 270 452 244 412 232"/>
+      <path d="M522 318 C542 270 572 244 612 232"/>
+      <path d="M506 314 C496 262 478 222 452 192"/>
+      <path d="M518 314 C528 262 546 222 572 192"/>
+      <path d="M512 312 C510 262 512 214 518 168"/>
+      <path d="M498 324 C468 300 430 294 394 300"/>
+      <path d="M526 324 C556 300 594 294 630 300"/>
+    </g>
+    <!-- body: egg shape, narrow top, broad base -->
+    <path mask="url(#cut)" d="M512 300 C610 300 662 400 696 520 C740 670 760 800 720 880 C690 940 610 960 512 960 C414 960 334 940 304 880 C264 800 284 670 334 520 C362 400 414 300 512 300 Z"/>
   </g>
 </svg>
