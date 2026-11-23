@@ -93,6 +93,25 @@ comments, so candidates survive across devices, collaborators and project copies
 
 In a web browser the block shows as this plain text. Selections always extend to whole lines, and blocks cannot be nested.
 
+Each candidate records who added it (Overleaf account name) and when; the active
+one's is shown in small type in the bar, the others' in each name's tooltip.
+
+## Edits with diff
+
+Select some lines and press `Ctrl+Shift+K` to edit them while keeping the
+original. The original stays visible above on a red background (read-only), and
+you edit the copy below on a green background. **Accept** keeps the new text and
+drops the old; **Reject** keeps the old text and drops the new. The block shows
+who started the edit and when.
+
+The new text is what compiles; the old text is kept in the source as comments:
+
+    %%edit:begin by="Alice Kim" at="2026-11-23 14:05"
+    %- We propose a method.
+    %%edit:new
+    We propose a novel method.
+    %%edit:end
+
 Developer Tools moved from `Ctrl+Shift+I` to `F12`.
 
 ## Updates
