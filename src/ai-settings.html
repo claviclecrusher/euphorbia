@@ -82,6 +82,15 @@
     <div class="note">A request that would go over this pauses and asks whether to continue. A first summary pass over this size asks too.</div>
   </fieldset>
 
+  <fieldset>
+    <legend>Writing style</legend>
+    <label style="display:flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" id="styleOn">
+      Apply these rules to text the AI writes into the paper (Ctrl+K and chat edits)</label>
+    <textarea id="style" spellcheck="false" style="height:220px;margin-top:6px"></textarea>
+    <div class="tools"><button type="button" id="styleReset">Reset to default</button>
+      <span class="out" id="styleNote">Default rules for AI research papers: short, plain sentences; "we" and active voice; precise claims; consistent terms and notation; LaTeX reference conventions.</span></div>
+  </fieldset>
+
   <div class="note" id="enc"></div>
   <div class="actions">
     <span class="spacer"></span>
@@ -110,6 +119,9 @@
     for (const c of s.choices || []) sel.add(new Option(c.label, c.id, false, c.id === s.summary));
     if (s.summary && !(s.choices || []).some((c) => c.id === s.summary)) sel.add(new Option(`${s.summary} (not available)`, s.summary, false, true));
     document.getElementById('limit').value = s.tokenLimit;
+    document.getElementById('styleOn').checked = s.styleEnabled !== false;
+    document.getElementById('style').value = s.style || '';
+    window.__defaultStyle = s.defaultStyle || '';
     document.getElementById('embprov').value = (s.embedding && s.embedding.provider) || '';
     document.getElementById('embmodel').value = (s.embedding && s.embedding.model) || '';
     document.getElementById('enc').textContent = s.encrypted ? 'Keys are encrypted with the system keychain.'
@@ -121,6 +133,8 @@
       summary: document.getElementById('summary').value,
       tokenLimit: document.getElementById('limit').value,
       embedding: { provider: document.getElementById('embprov').value, model: document.getElementById('embmodel').value },
+      styleEnabled: document.getElementById('styleOn').checked,
+      style: document.getElementById('style').value,
     };
     for (const p of P) {
       f[p] = { models: el(p, 'models').value, key: el(p, 'key').value, clearKey: clear[p] };
@@ -158,6 +172,9 @@
     if (res.ok) { show(res.settings); m.className = 'ok'; m.textContent = 'Saved.'; } else { m.className = 'err'; m.textContent = res.error; }
   });
   document.getElementById('cancel').addEventListener('click', () => window.aiSettings.close());
+  document.getElementById('styleReset').addEventListener('click', () => {
+    document.getElementById('style').value = window.__defaultStyle || '';
+  });
   window.aiSettings.get().then(show);
 </script>
 </body>

@@ -14,6 +14,7 @@ const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI = require('openai');
 const projectIndex = require('./project-index');
+const { DEFAULT_STYLE } = require('./writing-style');
 
 const PROVIDERS = ['claude', 'openai', 'local'];
 const PROVIDER_NAME = { claude: 'Claude', openai: 'OpenAI', local: 'Local' };
@@ -34,6 +35,35 @@ const EDIT_PROMPT = [
   'Reply with the replacement text for the selected lines only: no explanation, no code fences,',
   'nothing before or after it.',
 ].join(' ');
+
+// Writing rules (AI Settings) added to the prompts for text that goes into the paper.
+function styleRules() {
+  const s = settings();
+  return s.styleEnabled ? s.style : '';
+}
+
+function editPrompt() {
+  const rules = styleRules();
+  if (!rules) return EDIT_PROMPT;
+  return `${EDIT_PROMPT}
+
+Writing rules for the replacement text. Apply them to the sentences you write. When the
+instruction asks only for a narrow change (for example "fix the grammar" or "translate"), make
+that change in a way that follows the rules, and do not rewrite more than it asks for. The rules
+do not change LaTeX commands, math, labels or citations.
+${rules}`;
+}
+
+function chatPrompt() {
+  const rules = styleRules();
+  if (!rules) return CHAT_PROMPT;
+  return `${CHAT_PROMPT}
+
+Writing rules for text you put into the paper with propose_edit (not for your chat replies).
+Apply them to the sentences you write; when the user asks only for a narrow change, make that
+change and do not rewrite more than it asks for.
+${rules}`;
+}
 
 const CHAT_PROMPT = `You are a writing assistant inside a LaTeX editor (Overleaf). You help the user with
 their project: answer questions about it, find things in it, and change it when they ask.
@@ -96,6 +126,8 @@ function settings() {
     out[p] = e;
   }
   out.summary = typeof s.summary === 'string' ? s.summary : '';
+  out.styleEnabled = s.styleEnabled !== false;
+  out.style = typeof s.style === 'string' && s.style.trim() ? s.style : DEFAULT_STYLE;
   out.embedding = s.embedding && typeof s.embedding === 'object'
     ? { provider: String(s.embedding.provider || ''), model: String(s.embedding.model || '') }
     : { provider: '', model: '' };
@@ -130,7 +162,10 @@ const usable = (s, p) => (p === 'local' ? !!s.local.baseURL : !!openKey(s[p].key
 
 function publicSettings() {
   const s = settings();
-  const out = { encrypted: safeStorage.isEncryptionAvailable(), summary: s.summary, tokenLimit: s.tokenLimit, embedding: s.embedding, choices: choices(s) };
+  const out = {
+    encrypted: safeStorage.isEncryptionAvailable(), summary: s.summary, tokenLimit: s.tokenLimit, embedding: s.embedding, choices: choices(s),
+    styleEnabled: s.styleEnabled, style: s.style, defaultStyle: DEFAULT_STYLE,
+  };
   for (const p of PROVIDERS) {
     out[p] = { models: s[p].models, hasKey: !!openKey(s[p].key), ...(p === 'local' ? { baseURL: s[p].baseURL } : {}) };
   }
@@ -145,6 +180,12 @@ function applyForm(form) {
   const next = { ...current, selected: s.selected };
   delete next.provider;
   if (form && typeof form.summary === 'string') next.summary = str(form.summary, 300);
+  if (form && typeof form.styleEnabled === 'boolean') next.styleEnabled = form.styleEnabled;
+  if (form && typeof form.style === 'string') {
+    const st = form.style.replace(/\r\n/g, '\n').slice(0, 20000);
+    // The default is stored as '' so that later improvements to it reach the user.
+    next.style = st.trim() === DEFAULT_STYLE.trim() ? '' : st;
+  }
   if (form && form.embedding && typeof form.embedding === 'object') {
     const prov = ['openai', 'local'].includes(form.embedding.provider) ? form.embedding.provider : '';
     next.embedding = { provider: prov, model: prov ? str(form.embedding.model, 200) : '' };
@@ -279,7 +320,7 @@ async function runEdit(request, choiceId, key) {
   running.set(key, controller);
   try {
     const pick = resolve(choiceId, 'edit');
-    const result = await complete(pick, EDIT_PROMPT, [{ role: 'user', content: editMessage(request) }], controller.signal);
+    const result = await complete(pick, editPrompt(), [{ role: 'user', content: editMessage(request) }], controller.signal);
     const text = cleanOutput(result.text);
     if (!text.trim()) throw new Error('The model returned an empty answer.');
     return { ok: true, text, by: `AI (${pick.model})` };
@@ -753,6 +794,7 @@ async function runChat(sender, req) {
     }
 
     const defs = toolsFor(mode, ws.hasRelated);
+    const prompt = chatPrompt();
     const tools = {
       ...ws.tools,
       read_history: ({ id: hid }) => {
@@ -768,7 +810,7 @@ async function runChat(sender, req) {
     if (pick.provider === 'claude') {
       const client = anthropicClient(s);
       const system = [
-        { type: 'text', text: CHAT_PROMPT },
+        { type: 'text', text: prompt },
         { type: 'text', text: ws.index, cache_control: { type: 'ephemeral' } },
       ];
       // Client tools streamed with eager input; inputs are validated in runTool.
@@ -777,7 +819,7 @@ async function runChat(sender, req) {
       const effort = supportsEffort(pick.model) ? { output_config: { effort: mode === 'read' ? 'low' : 'high' } } : {};
 
       // Exact size of the first request when the API can tell; else an estimate.
-      let first = estimate(CHAT_PROMPT.length + ws.index.length + JSON.stringify(msgs).length + JSON.stringify(defs).length);
+      let first = estimate(prompt.length + ws.index.length + JSON.stringify(msgs).length + JSON.stringify(defs).length);
       if (metered) {
         try {
           const counted = await client.messages.countTokens({ model: pick.model, system, tools: defs, messages: msgs });
@@ -847,7 +889,7 @@ async function runChat(sender, req) {
     } else {
       const client = openaiClient(s, pick.provider);
       const fnDefs = defs.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } }));
-      const msgs = [{ role: 'system', content: `${CHAT_PROMPT}\n\n${ws.index}` }, ...messages];
+      const msgs = [{ role: 'system', content: `${prompt}\n\n${ws.index}` }, ...messages];
       if (!(await checkBudget(estimate(JSON.stringify(msgs).length + JSON.stringify(fnDefs).length)))) {
         throw Object.assign(new Error('Stopped before sending: the request would go over the token limit.'), { quiet: true });
       }

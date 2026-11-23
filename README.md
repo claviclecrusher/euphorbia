@@ -135,6 +135,19 @@ Every listed model of every working connection appears in the model menus of
 `Ctrl+K` and the chat panel. Keys stay on this computer (encrypted with the system
 keychain when available) and are used only by the app, never by the Overleaf page.
 
+### Writing style
+
+Text the AI writes into the paper (Ctrl+K rewrites and chat edits) follows a set of
+writing rules for AI research papers, shown and editable in **AI Settings → Writing
+style**: short, plain sentences (about 15-25 words) with one idea each; no filler
+or inflated words; "we" and active voice; present tense for claims and method, past
+tense for experiments run; precise claims with numbers instead of adjectives; one
+term per concept and the paper's own notation; defined abbreviations; and LaTeX
+conventions such as `Figure~\ref{...}`. The rules also forbid adding or dropping
+claims when rewriting and guessing author names from citation keys. Untick the box
+to turn them off, edit the text to make them your own, or **Reset to default**.
+Chat replies themselves are not affected.
+
 ### Ctrl+K: edit the selection
 
 Select lines, press `Ctrl+K`, pick a model, type what to change and press Enter.
