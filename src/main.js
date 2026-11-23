@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const updater = require('./updater');
 const projectCopy = require('./project-copy');
+const split = require('./split');
 
 // ---------------------------------------------------------------- config ---
 //
@@ -170,8 +171,9 @@ const webPreferences = {
   spellcheck: true,
 };
 
-function attachCommonHandlers(win) {
-  const wc = win.webContents;
+// `contents` is given for views embedded in `win` (the split editor pane).
+function attachCommonHandlers(win, contents) {
+  const wc = contents || win.webContents;
 
   // Server pages opened in a "new tab" (detached PDF, project in new tab)
   // become app windows. Everything else goes to the system browser.
@@ -273,6 +275,7 @@ function createMainWindow() {
   });
 
   attachCommonHandlers(mainWindow);
+  mainWindow.webContents.on('did-navigate', () => split.onMainNavigate());
 
   mainWindow.webContents.on(
     'did-fail-load',
@@ -377,10 +380,12 @@ function showSetup() {
 // -------------------------------------------------------------------- ipc ---
 
 // Scripts the page preload injects before the page's own scripts run.
-const EARLY_PAGE_SCRIPT = fs.readFileSync(path.join(__dirname, 'page', 'candidates.js'), 'utf8');
+const EARLY_PAGE_SCRIPT = ['candidates.js', 'shortcut-help.js', 'editor-tabs.js']
+  .map((f) => fs.readFileSync(path.join(__dirname, 'page', f), 'utf8'))
+  .join('\n;\n');
 
 ipcMain.on('page:early-script', (event) => {
-  event.returnValue = EARLY_PAGE_SCRIPT;
+  event.returnValue = `window.__olDesktopPane = ${split.roleOf(event.sender)};\n` + EARLY_PAGE_SCRIPT;
 });
 
 function fromSetup(event) {
@@ -548,6 +553,12 @@ if (!app.requestSingleInstanceLock()) {
     // Refuse device permissions other than clipboard access, which the editor uses.
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
       callback(permission === 'clipboard-read' || permission === 'clipboard-sanitized-write');
+    });
+
+    split.init({
+      getMainWindow: () => mainWindow,
+      attachCommonHandlers,
+      webPreferences,
     });
 
     projectCopy.init({

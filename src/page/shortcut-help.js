@@ -1,0 +1,45 @@
+// Runs in the Overleaf page. Appends an "Overleaf-Desktop Native Shortcut"
+// section to Help → Keyboard shortcuts, below Overleaf's own shortcuts.
+(() => {
+  if (window.__overleafDesktopShortcutHelp) return;
+  window.__overleafDesktopShortcutHelp = true;
+
+  const ctrl = /Mac/.test(navigator.platform) ? 'Cmd' : 'Ctrl';
+  const KEYS = [
+    [`${ctrl} + Shift + I`, 'Candidates: turn the selected lines into a candidate block, or add a candidate inside one'],
+    [`${ctrl} + 1 … 9`, 'Switch to a saved server'],
+    [`${ctrl} + Shift + H`, 'Back to the project list'],
+    ['F12', 'Developer tools'],
+  ];
+
+  function enhance(body) {
+    if (body.querySelector('.ol-desktop-hotkeys')) return;
+    const section = document.createElement('div');
+    section.className = 'ol-desktop-hotkeys';
+    section.style.marginTop = '24px';
+    const h = document.createElement('h3');
+    h.textContent = 'Overleaf-Desktop Native Shortcut';
+    section.appendChild(h);
+    for (const [combination, description] of KEYS) {
+      const row = document.createElement('div');
+      row.className = 'hotkey';
+      const c = document.createElement('span');
+      c.className = 'combination';
+      c.textContent = combination;
+      const d = document.createElement('span');
+      d.className = 'description';
+      d.textContent = description;
+      row.append(c, d);
+      section.appendChild(row);
+    }
+    body.appendChild(section);
+  }
+
+  const scan = () => document.querySelectorAll('.modal-body.hotkeys-modal').forEach(enhance);
+  const start = () => {
+    new MutationObserver(scan).observe(document.documentElement, { childList: true, subtree: true });
+    scan();
+  };
+  if (document.documentElement) start();
+  else document.addEventListener('DOMContentLoaded', start);
+})();
