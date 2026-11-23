@@ -1,7 +1,7 @@
 {
   "name": "overleaf-desktop",
   "productName": "Overleaf Desktop",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Desktop client for a self-hosted Overleaf Community Edition server",
   "homepage": "https://github.com/claviclecrusher/overleaf-desktop",
   "main": "src/main.js",

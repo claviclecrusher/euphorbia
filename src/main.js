@@ -377,7 +377,9 @@ function showSetup() {
 // -------------------------------------------------------------------- ipc ---
 
 // Scripts the page preload injects before the page's own scripts run.
-const EARLY_PAGE_SCRIPT = fs.readFileSync(path.join(__dirname, 'page', 'candidates.js'), 'utf8');
+const EARLY_PAGE_SCRIPT = ['candidates.js', 'shortcut-help.js']
+  .map((f) => fs.readFileSync(path.join(__dirname, 'page', f), 'utf8'))
+  .join('\n;\n');
 
 ipcMain.on('page:early-script', (event) => {
   event.returnValue = EARLY_PAGE_SCRIPT;
