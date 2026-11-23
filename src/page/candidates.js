@@ -13,14 +13,52 @@
 //   %%cand:end
 //
 // The editor folds the marker and comment lines into a bar of buttons above
-// the active text. Overleaf hands out its CodeMirror objects through the
+// the active text. Each option records who added it and when (by=, at=).
+//
+// Edits (Ctrl+Shift+K) keep the text from before a change next to the change,
+// both visible, until the change is accepted or rejected. The new text is
+// plain source (it compiles); the old text is kept as comments:
+//
+//   %%edit:begin by="Alice Kim" at="2026-11-23 14:05"
+//   %- We propose a method.
+//   %%edit:new
+//   We propose a novel method.
+//   %%edit:end
+// Overleaf hands out its CodeMirror objects through the
 // (unsupported) UNSTABLE_editor:extensions event.
 (() => {
   if (window.__overleafDesktopCandidates) return;
   window.__overleafDesktopCandidates = true;
 
   const BEGIN = /^\s*%%cand:begin\b(?:\s+id=([\w-]+))?\s*$/;
-  const OPTION = /^\s*%%cand:option\b(?:\s+name="([^"]*)")?(\s+active)?\s*$/;
+  const OPTION = /^\s*%%cand:option\b((?:\s+\w+="[^"]*")*)(\s+active)?\s*$/;
+  const ATTR = /(\w+)="([^"]*)"/g;
+  const attrs = (text) => {
+    const out = {};
+    for (const m of String(text || '').matchAll(ATTR)) out[m[1]] = m[2];
+    return out;
+  };
+  const clean = (v) => String(v || '').replace(/["\r\n]/g, '').trim();
+
+  // Overleaf account name of the person editing, and the local time.
+  function author() {
+    try {
+      const meta = document.querySelector('meta[name="ol-user"]');
+      const u = meta ? JSON.parse(meta.getAttribute('content')) : null;
+      const name = u && [u.first_name, u.last_name].filter(Boolean).join(' ').trim();
+      if (name) return clean(name).slice(0, 60);
+      if (u && u.email) return clean(u.email.split('@')[0]).slice(0, 60);
+    } catch {
+      /* fall through */
+    }
+    return 'unknown';
+  }
+  function now() {
+    const d = new Date();
+    const p2 = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  }
+  const stamp = (by, at) => [by, at].filter(Boolean).join(' \u00b7 ');
   const END = /^\s*%%cand:end\s*$/;
   const HIDDEN = /^\s*%\|\s?(.*)$/;
 
@@ -45,7 +83,8 @@
       if ((m = BEGIN.exec(text))) {
         open = { id: m[1] || '', from: line.from, firstLine: n, options: [], current: null };
       } else if (open && (m = OPTION.exec(text))) {
-        open.current = { name: m[1] || '', active: !!m[2], headerLine: n, raw: [] };
+        const a = attrs(m[1]);
+        open.current = { name: a.name || '', by: a.by || '', at: a.at || '', active: !!m[2], headerLine: n, raw: [] };
         open.options.push(open.current);
       } else if (open && END.test(text)) {
         if (open.options.length) {
@@ -84,7 +123,8 @@
     const out = [`%%cand:begin id=${block.id}`];
     block.options.forEach((o, i) => {
       const active = i === block.active;
-      out.push(`%%cand:option name="${o.name.replace(/"/g, "'")}"${active ? ' active' : ''}`);
+      const meta = (o.by ? ` by="${clean(o.by)}"` : '') + (o.at ? ` at="${clean(o.at)}"` : '');
+      out.push(`%%cand:option name="${o.name.replace(/"/g, "'")}"${meta}${active ? ' active' : ''}`);
       for (const l of o.lines) out.push(active ? l : l.length ? `%| ${l}` : '%|');
     });
     out.push('%%cand:end');
@@ -140,11 +180,10 @@
     if (sel.to > sel.from && sel.to === last.from && last.number > first.number) {
       last = state.doc.line(last.number - 1);
     }
-    const overlaps = parse(state.doc).some((b) => first.from <= b.to && last.to >= b.from);
-    if (overlaps) return true; // no nesting
+    if (overlapsAny(state.doc, first.from, last.to)) return true; // no nesting
     const body = state.doc.sliceString(first.from, last.to);
     const text =
-      `%%cand:begin id=${newId()}\n%%cand:option name="A" active\n${body}\n%%cand:end`;
+      `%%cand:begin id=${newId()}\n%%cand:option name="A" by="${author()}" at="${now()}" active\n${body}\n%%cand:end`;
     view.dispatch({
       changes: { from: first.from, to: last.to, insert: text },
       userEvent: 'input.candidates',
@@ -158,7 +197,7 @@
     const block = blockAt(view.state, pos);
     if (!block || !editable(view)) return;
     const current = block.options[block.active];
-    block.options.push({ name: nextName(block.options), lines: current.lines.slice() });
+    block.options.push({ name: nextName(block.options), by: author(), at: now(), lines: current.lines.slice() });
     block.active = block.options.length - 1;
     replaceBlock(view, block, serialize(block), true);
   }
@@ -196,6 +235,92 @@
     replaceBlock(view, block, block.options[block.active].lines.join('\n'), false);
   }
 
+  // ------------------------------------------------------------- edits ---
+
+  const E_BEGIN = /^\s*%%edit:begin\b((?:\s+\w+="[^"]*")*)\s*$/;
+  const E_NEW = /^\s*%%edit:new\s*$/;
+  const E_END = /^\s*%%edit:end\s*$/;
+  const E_OLD = /^\s*%-(?: (.*)|)$/;
+
+  // Each: { by, at, from, to, beginLine, newLine, endLine, oldLines: [text], newLines: [text] }.
+  function parseEdits(doc) {
+    const out = [];
+    if (doc.length < 20) return out;
+    let open = null;
+    for (let n = 1; n <= doc.lines; n++) {
+      const line = doc.line(n);
+      const text = line.text;
+      let m;
+      if (!open) {
+        if (text.indexOf('%%edit:begin') >= 0 && (m = E_BEGIN.exec(text))) {
+          const a = attrs(m[1]);
+          open = { by: a.by || '', at: a.at || '', from: line.from, beginLine: n, newLine: 0, oldLines: [], newLines: [] };
+        }
+        continue;
+      }
+      if (!open.newLine) {
+        if (E_NEW.test(text)) open.newLine = n;
+        else if ((m = E_OLD.exec(text))) open.oldLines.push(m[1] || '');
+        else open = null; // malformed: ignore the block
+        continue;
+      }
+      if (E_END.test(text)) {
+        open.endLine = n;
+        open.to = line.to;
+        out.push(open);
+        open = null;
+      } else if (E_BEGIN.test(text)) {
+        open = null;
+      } else {
+        open.newLines.push(text);
+      }
+    }
+    return out;
+  }
+
+  const editAt = (state, pos) => parseEdits(state.doc).find((b) => pos >= b.from && pos <= b.to) || null;
+
+  function overlapsAny(doc, from, to) {
+    return parse(doc).some((b) => from <= b.to && to >= b.from) || parseEdits(doc).some((b) => from <= b.to && to >= b.from);
+  }
+
+  // Ctrl+Shift+K: start an edit of the selected lines. The old text is kept
+  // above, and the cursor goes to the copy below, which is what gets edited.
+  function createEdit(view) {
+    if (!editable(view)) return false;
+    const { state } = view;
+    const sel = state.selection.main;
+    if (editAt(state, sel.head) || blockAt(state, sel.head)) return true;
+    const first = state.doc.lineAt(sel.from);
+    let last = state.doc.lineAt(sel.to);
+    if (sel.to > sel.from && sel.to === last.from && last.number > first.number) {
+      last = state.doc.line(last.number - 1);
+    }
+    if (overlapsAny(state.doc, first.from, last.to)) return true;
+    const body = state.doc.sliceString(first.from, last.to);
+    const old = body.split('\n').map((l) => (l.length ? `%- ${l}` : '%-')).join('\n');
+    const head = `%%edit:begin by="${author()}" at="${now()}"\n${old}\n%%edit:new\n`;
+    view.dispatch({
+      changes: { from: first.from, to: last.to, insert: `${head}${body}\n%%edit:end` },
+      selection: { anchor: first.from + head.length, head: first.from + head.length + body.length },
+      userEvent: 'input.candidates',
+    });
+    view.focus();
+    return true;
+  }
+
+  function settleEdit(view, pos, keepNew) {
+    const block = editAt(view.state, pos);
+    if (!block || !editable(view)) return;
+    const lines = keepNew ? block.newLines : block.oldLines;
+    view.dispatch({
+      changes: { from: block.from, to: block.to, insert: lines.join('\n') },
+      selection: { anchor: block.from },
+      userEvent: 'input.candidates',
+    });
+    view.focus();
+  }
+
   // ------------------------------------------------------------ editor ---
 
   window.addEventListener('UNSTABLE_editor:extensions', (event) => {
@@ -213,8 +338,9 @@
       constructor(block) {
         super();
         this.names = block.options.map((o) => o.name);
+        this.stamps = block.options.map((o) => stamp(o.by, o.at));
         this.active = block.active;
-        this.key = `${block.id}|${this.active}|${this.names.join('\u0001')}`;
+        this.key = `${block.id}|${this.active}|${this.names.join('\u0001')}|${this.stamps.join('\u0001')}`;
       }
 
       eq(other) {
@@ -239,7 +365,9 @@
           pick.type = 'button';
           pick.className = 'ol-cand-pick';
           pick.textContent = name || `Option ${index + 1}`;
-          pick.title = index === this.active ? 'Active (double-click to rename)' : 'Switch to this candidate (double-click to rename)';
+          pick.title =
+            (index === this.active ? 'Active' : 'Switch to this candidate') +
+            ' (double-click to rename)' + (this.stamps[index] ? `\n${this.stamps[index]}` : '');
           let clickTimer = null;
           pick.addEventListener('click', () => {
             if (clickTimer) return;
@@ -273,6 +401,11 @@
         add.title = 'Add a candidate (copy of the active one)';
         add.addEventListener('click', () => addOption(view, pos()));
         bar.appendChild(add);
+
+        const meta = document.createElement('span');
+        meta.className = 'ol-cand-meta';
+        meta.textContent = this.stamps[this.active] || '';
+        bar.appendChild(meta);
 
         const done = document.createElement('button');
         done.type = 'button';
@@ -337,6 +470,91 @@
       }
     }
 
+    // Header + old text, drawn as one widget so the old text cannot be edited.
+    class EditHeadWidget extends WidgetType {
+      constructor(block) {
+        super();
+        this.by = block.by;
+        this.at = block.at;
+        this.old = block.oldLines;
+        this.empty = !block.newLines.length;
+        this.key = `${this.by}|${this.at}|${this.empty}|${this.old.join('\n')}`;
+      }
+
+      eq(other) {
+        return other.key === this.key;
+      }
+
+      toDOM(view) {
+        const box = document.createElement('div');
+        box.className = 'ol-edit-head';
+        const pos = () => view.posAtDOM(box);
+
+        const bar = document.createElement('div');
+        bar.className = 'ol-edit-bar';
+        const label = document.createElement('span');
+        label.className = 'ol-edit-label';
+        label.textContent = 'Edit';
+        bar.appendChild(label);
+        const meta = document.createElement('span');
+        meta.className = 'ol-edit-meta';
+        meta.textContent = stamp(this.by, this.at);
+        bar.appendChild(meta);
+        const accept = document.createElement('button');
+        accept.type = 'button';
+        accept.className = 'ol-edit-accept';
+        accept.textContent = 'Accept';
+        accept.title = 'Keep the new text and remove the old';
+        accept.addEventListener('click', () => settleEdit(view, pos(), true));
+        bar.appendChild(accept);
+        const reject = document.createElement('button');
+        reject.type = 'button';
+        reject.className = 'ol-edit-reject';
+        reject.textContent = 'Reject';
+        reject.title = 'Keep the old text and remove the new';
+        reject.addEventListener('click', () => settleEdit(view, pos(), false));
+        bar.appendChild(reject);
+        bar.addEventListener('mousedown', (e) => e.preventDefault());
+        box.appendChild(bar);
+
+        for (const text of this.old) {
+          const line = document.createElement('div');
+          line.className = 'ol-edit-old';
+          line.textContent = text || '\u200b';
+          box.appendChild(line);
+        }
+        if (this.empty) {
+          const note = document.createElement('div');
+          note.className = 'ol-edit-note';
+          note.textContent = '(all new text removed: accepting deletes these lines)';
+          box.appendChild(note);
+        }
+        return box;
+      }
+
+      ignoreEvent() {
+        return true;
+      }
+    }
+
+    class EditTailWidget extends WidgetType {
+      eq() {
+        return true;
+      }
+
+      toDOM() {
+        const el = document.createElement('div');
+        el.className = 'ol-edit-tail';
+        return el;
+      }
+
+      ignoreEvent() {
+        return true;
+      }
+    }
+
+    const newLine = Decoration.line({ class: 'ol-edit-new' });
+
     const bodyLine = Decoration.line({ class: 'ol-cand-body' });
 
     function build(state) {
@@ -356,6 +574,16 @@
         }
         const tailFrom = doc.line(block.bodyToLine + 1).from;
         ranges.push(Decoration.replace({ widget: new TailWidget(), block: true }).range(tailFrom, block.to));
+      }
+      for (const block of parseEdits(doc)) {
+        const head = new EditHeadWidget(block);
+        if (!block.newLines.length) {
+          ranges.push(Decoration.replace({ widget: head, block: true }).range(block.from, block.to));
+          continue;
+        }
+        ranges.push(Decoration.replace({ widget: head, block: true }).range(block.from, doc.line(block.newLine).to));
+        for (let n = block.newLine + 1; n < block.endLine; n++) ranges.push(newLine.range(doc.line(n).from));
+        ranges.push(Decoration.replace({ widget: new EditTailWidget(), block: true }).range(doc.line(block.endLine).from, block.to));
       }
       return Decoration.set(ranges, true);
     }
@@ -421,6 +649,45 @@
         color: '#1b222c',
         background: '#fff',
       },
+      '.ol-cand-meta': { marginLeft: 'auto', fontSize: '11px', opacity: '0.6' },
+      '.ol-cand-meta + button.ol-cand-done': { marginLeft: '0' },
+      '.ol-edit-head': { borderLeft: '3px solid #c0392b', userSelect: 'none' },
+      '.ol-edit-bar': {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '2px 8px',
+        fontFamily: 'system-ui, "Segoe UI", sans-serif',
+        fontSize: '12px',
+        lineHeight: '1.4',
+      },
+      '&light .ol-edit-bar': { background: '#f6f1ee', color: '#1b222c' },
+      '&dark .ol-edit-bar': { background: '#2d2624', color: '#e7e9ee' },
+      '.ol-edit-label': { fontWeight: '600', opacity: '0.75' },
+      '.ol-edit-meta': { fontSize: '11px', opacity: '0.6', marginRight: 'auto' },
+      '.ol-edit-bar button': {
+        font: 'inherit',
+        border: '0',
+        borderRadius: '12px',
+        padding: '1px 10px',
+        cursor: 'pointer',
+        color: '#fff',
+      },
+      '.ol-edit-bar button.ol-edit-accept': { background: '#098842' },
+      '.ol-edit-bar button.ol-edit-reject': { background: '#b83a33' },
+      '.ol-edit-old': {
+        padding: '0 2px 0 6px',
+        whiteSpace: 'pre-wrap',
+        textDecoration: 'line-through',
+        textDecorationColor: 'rgba(184,58,51,0.55)',
+      },
+      '&light .ol-edit-old': { background: 'rgba(220, 53, 69, 0.14)' },
+      '&dark .ol-edit-old': { background: 'rgba(220, 53, 69, 0.24)' },
+      '.ol-edit-note': { padding: '0 8px', fontSize: '11px', opacity: '0.7', fontFamily: 'system-ui, sans-serif' },
+      '&light .ol-edit-new, &light .ol-edit-new.cm-activeLine': { background: 'rgba(9, 136, 66, 0.14)' },
+      '&dark .ol-edit-new, &dark .ol-edit-new.cm-activeLine': { background: 'rgba(9, 136, 66, 0.26)' },
+      '.ol-edit-new': { borderLeft: '3px solid #098842' },
+      '.ol-edit-tail': { height: '3px', borderLeft: '3px solid #098842', opacity: '0.5' },
       '.ol-cand-body': { borderLeft: '3px solid #098842' },
       '.ol-cand-tail': { height: '3px', borderLeft: '3px solid #098842', opacity: '0.5' },
     });
@@ -428,7 +695,12 @@
     return [
       field,
       theme,
-      Prec.highest(keymap.of([{ key: 'Mod-Shift-i', run: createOrAdd, preventDefault: true }])),
+      Prec.highest(
+        keymap.of([
+          { key: 'Mod-Shift-i', run: createOrAdd, preventDefault: true },
+          { key: 'Mod-Shift-k', run: createEdit, preventDefault: true },
+        ])
+      ),
     ];
   }
 })();
