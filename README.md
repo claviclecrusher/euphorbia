@@ -56,6 +56,18 @@ Tabs are remembered per project on this computer. Overleaf still edits one
 document at a time; switching a tab opens that document as if it had been clicked
 in the file tree, including inside collapsed folders.
 
+### Split editor
+
+The editor can be split into a top and a bottom pane, each with its own tabs.
+Send a tab to the other pane with its `⇅` button, its right-click menu, or by
+dragging it onto the other pane's tab strip. Dragging a tab onto the lower half
+of a single editor splits it. Drag the bar between the panes to resize them.
+When the bottom pane has no tabs left, the editor goes back to a single pane.
+
+The bottom pane is a second copy of the project page showing only its editor,
+kept in sync through the server like a collaborator. The file tree and the PDF
+belong to the top pane; `Ctrl+Enter` / `Ctrl+S` in the bottom pane compile there.
+
 ## Candidates
 
 Candidates keep several alternative versions of a block of lines side by side, so
