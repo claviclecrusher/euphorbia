@@ -1,6 +1,6 @@
 # Euphorbia
 
-<img src="build/icon.svg" width="96" alt="Euphorbia icon"> <img src="build/icon-small.svg" width="48" alt="Small icon">
+<img src="build/icon.svg" width="96" alt="Euphorbia icon"> <img src="build/icon-small.svg" width="48" alt="App icon">
 
 A desktop client (Windows, Linux) for Overleaf servers: a self-hosted Community
 Edition instance, overleaf.com, or both. Compiling and storage stay on the server.
