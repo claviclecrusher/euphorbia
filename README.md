@@ -150,10 +150,18 @@ there. When you ask for a change, the model's edits are added to the files as
 edits with diff for Accept / Reject; an edit that can't be placed is listed with
 the reason and a **Try again** button.
 
-The **mode** button next to Send switches between **Write** (the AI may edit the
-files, as edits to accept or reject) and **Read-only** (it reads and answers but
-does not edit; edits it writes anyway are not applied). Each message carries its
-mode to the model.
+The **mode** button next to Send cycles through three modes, and each message
+carries its mode to the model:
+
+- **Edit**: the AI may change the files, as edits to accept or reject.
+- **Read**: it reads and answers but changes nothing (edits it writes anyway are
+  not applied).
+- **Search**: it finds the places related to your passage or question (point at
+  one with `Ctrl+L`): the same notation, related experiments, theory, citations
+  and bibliography entries. They are listed in the chat and shown with a yellow
+  background in the editor, with a yellow bar above the editor to step through
+  them (`‹ n/N ›`). The **×** on the bar turns the highlights off. Highlights are
+  only on your screen; nothing is written into the source.
 
 `.bib` files are always read-only for the AI: the model is told so and may read
 them, edits it writes for them are never applied, and `Ctrl+K` is turned off in

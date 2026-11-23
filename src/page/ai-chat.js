@@ -19,6 +19,8 @@
   if (!ai) return;
 
   let CM = null; // CodeMirror objects from Overleaf
+  let setHighlights = null;
+  let highlightLine = null;
   const view = () => {
     try {
       return window.overleaf.unstable.store.get('editor.view');
@@ -200,7 +202,25 @@
   window.addEventListener('UNSTABLE_editor:extensions', (event) => {
     try {
       CM = event.detail.CodeMirror;
-      const { keymap, Prec } = CM;
+      const { keymap, Prec, Decoration, EditorView, StateEffect, StateField } = CM;
+      // Search highlights: yellow lines, shown only to this user, never in the source.
+      setHighlights = StateEffect.define();
+      highlightLine = Decoration.line({ class: 'ol-searched-line' });
+      event.detail.extensions.push(
+        StateField.define({
+          create: () => Decoration.none,
+          update(value, tr) {
+            let v = value.map(tr.changes);
+            for (const e of tr.effects) if (e.is(setHighlights)) v = e.value;
+            return v;
+          },
+          provide: (f) => EditorView.decorations.from(f),
+        }),
+        EditorView.baseTheme({
+          '&light .ol-searched-line, &light .ol-searched-line.cm-activeLine': { background: 'rgba(255, 213, 0, 0.32)' },
+          '&dark .ol-searched-line, &dark .ol-searched-line.cm-activeLine': { background: 'rgba(255, 213, 0, 0.22)' },
+        })
+      );
       event.detail.extensions.push(
         Prec.highest(
           keymap.of([
@@ -261,19 +281,25 @@
   input.placeholder = 'Ask about the project or request a change. Ctrl+L adds the selected lines.';
   input.rows = 3;
   const send = el('button', 'ol-chat-send', 'Send');
-  // Write: the model may change the files. Read-only: it only reads and answers.
+  // Edit: the model may change the files. Read: it only reads and answers.
+  // Search: it marks related places in the project (yellow, only on screen).
   const MODE_KEY = 'ol-desktop-chat-mode';
-  let mode = localStorage.getItem(MODE_KEY) === 'read' ? 'read' : 'write';
+  const MODES = {
+    edit: { label: '\u270e Edit', title: 'Edit mode: the AI may change the files (as edits to accept or reject).' },
+    read: { label: '\u{1F441} Read', title: 'Read mode: the AI reads and answers but does not change anything.' },
+    search: { label: '\u{1F50D} Search', title: 'Search mode: the AI marks the places related to your passage or question (same notation, experiments, theory, citations, references) in yellow.' },
+  };
+  const ORDER = ['edit', 'read', 'search'];
+  const storedMode = localStorage.getItem(MODE_KEY);
+  let mode = storedMode === 'write' ? 'edit' : MODES[storedMode] ? storedMode : 'edit';
   const modeBtn = el('button', 'ol-chat-mode');
   const showMode = () => {
-    modeBtn.textContent = mode === 'write' ? '\u270e Write' : '\u{1F441} Read-only';
-    modeBtn.title = mode === 'write'
-      ? 'Write mode: the AI may edit the files (as edits to accept or reject). Click for read-only.'
-      : 'Read-only mode: the AI reads and answers but does not edit. Click for write mode.';
-    modeBtn.classList.toggle('read', mode === 'read');
+    modeBtn.textContent = MODES[mode].label;
+    modeBtn.title = `${MODES[mode].title} Click to switch.`;
+    modeBtn.dataset.mode = mode;
   };
   modeBtn.addEventListener('click', () => {
-    mode = mode === 'write' ? 'read' : 'write';
+    mode = ORDER[(ORDER.indexOf(mode) + 1) % ORDER.length];
     localStorage.setItem(MODE_KEY, mode);
     showMode();
   });
@@ -438,6 +464,23 @@
 
   const EDIT_RE = /<edit\s+file="([^"]+)"\s*>\s*<find>\n?([\s\S]*?)\n?<\/find>\s*<replace>\n?([\s\S]*?)\n?<\/replace>\s*<\/edit>/g;
 
+  const HIGHLIGHT_RE = /<highlight\s+([^>]*?)\/?>(?:\s*<\/highlight>)?/g;
+  const attrOf = (s, k) => (s.match(new RegExp(`${k}="([^"]*)"`)) || [])[1] || '';
+
+  // Highlight tags in an answer: [{ path, start, end, kind, note }].
+  function parseHighlights(text) {
+    const out = [];
+    for (const m of String(text).matchAll(HIGHLIGHT_RE)) {
+      const lines = attrOf(m[1], 'lines').match(/(\d+)(?:\s*-\s*(\d+))?/);
+      const path = attrOf(m[1], 'file');
+      if (!path || !lines) continue;
+      const start = Number(lines[1]);
+      const end = Math.max(start, Number(lines[2] || lines[1]));
+      out.push({ path, start, end, kind: attrOf(m[1], 'kind') || 'related', note: attrOf(m[1], 'note') });
+    }
+    return out;
+  }
+
   function parseEdits(text) {
     const edits = [];
     const clean = text.replace(/```[\w-]*\n(\s*<edit[\s\S]*?<\/edit>\s*)\n?```/g, '$1');
@@ -528,13 +571,33 @@
       return box;
     }
     if (msg.by) box.appendChild(el('div', 'ol-chat-by', msg.by));
-    const { parts, edits } = parseEdits(msg.content);
+    const hits = parseHighlights(msg.content);
+    const { parts, edits } = parseEdits(msg.content.replace(HIGHLIGHT_RE, '').replace(/\n{3,}/g, '\n\n'));
     for (const p of parts) {
       if (p.text != null) {
         if (p.text.trim()) box.appendChild(textNode(p.text));
       } else {
         box.appendChild(editCard(edits[p.edit], (msg.edits || [])[p.edit]));
       }
+    }
+    if (hits.length) {
+      const wrap = el('div', 'ol-chat-hits');
+      hits.forEach((h, i) => {
+        const row = el('div', 'ol-chat-hit');
+        const link = el('button', 'ol-chat-ref-link', `${h.path}:${h.start}${h.end !== h.start ? `-${h.end}` : ''}`);
+        link.type = 'button';
+        link.addEventListener('click', () => {
+          showSearched(hits, i);
+        });
+        row.append(el('span', 'ol-chat-hit-kind', h.kind), link);
+        if (h.note) row.appendChild(el('span', 'ol-chat-hit-note', h.note));
+        wrap.appendChild(row);
+      });
+      const again = el('button', 'ol-chat-retry', 'Highlight these again');
+      again.type = 'button';
+      again.addEventListener('click', () => showSearched(hits, 0));
+      wrap.appendChild(again);
+      box.appendChild(wrap);
     }
     return box;
   }
@@ -667,6 +730,98 @@
     }
   });
 
+  // ----------------------------------------------------------- searched ---
+  //
+  // Places marked by a search answer, highlighted in yellow in whichever file
+  // is open, with a yellow bar above the editor while the state is on.
+
+  let searched = null; // { hits, at }
+  const bar = el('div', 'ol-searched-bar');
+  bar.hidden = true;
+  const barText = el('span', 'ol-searched-text');
+  const barPrev = el('button', '', '\u2039');
+  const barPos = el('span', '');
+  const barNext = el('button', '', '\u203a');
+  const barClose = el('button', 'ol-searched-close', '\u00d7');
+  barPrev.type = barNext.type = barClose.type = 'button';
+  barPrev.title = 'Previous place';
+  barNext.title = 'Next place';
+  barClose.title = 'Turn the search highlights off';
+  bar.append(barText, barPrev, barPos, barNext, barClose);
+  barClose.addEventListener('click', () => clearSearched());
+  barPrev.addEventListener('click', () => goSearched(searched.at - 1));
+  barNext.addEventListener('click', () => goSearched(searched.at + 1));
+
+  function paintSearched() {
+    const v = view();
+    if (!v || !setHighlights) return;
+    if (!searched) {
+      v.dispatch({ effects: setHighlights.of(CM.Decoration.none) });
+      return;
+    }
+    const path = currentPath();
+    const doc = v.state.doc;
+    const ranges = [];
+    for (const h of searched.hits) {
+      if (h.path !== path) continue;
+      for (let n = Math.max(1, h.start); n <= Math.min(h.end, doc.lines); n++) ranges.push(highlightLine.range(doc.line(n).from));
+    }
+    ranges.sort((a, b) => a.from - b.from);
+    const unique = ranges.filter((r, i) => i === 0 || r.from !== ranges[i - 1].from);
+    v.dispatch({ effects: setHighlights.of(CM.Decoration.set(unique)) });
+  }
+
+  function renderBar() {
+    bar.hidden = !searched;
+    if (!searched) return;
+    const files = new Set(searched.hits.map((h) => h.path)).size;
+    barText.textContent = `\u{1F50D} Searched: ${searched.hits.length} place(s) in ${files} file(s)`;
+    barPos.textContent = `${searched.at + 1}/${searched.hits.length}`;
+    barPrev.disabled = searched.at <= 0;
+    barNext.disabled = searched.at >= searched.hits.length - 1;
+  }
+
+  async function goSearched(i) {
+    if (!searched || i < 0 || i >= searched.hits.length) return;
+    searched.at = i;
+    renderBar();
+    const h = searched.hits[i];
+    await revealLines(h.path, h.start, h.end);
+    paintSearched();
+  }
+
+  function showSearched(hits, at) {
+    searched = { hits, at: 0 };
+    renderBar();
+    paintSearched();
+    goSearched(at || 0);
+  }
+
+  function clearSearched() {
+    searched = null;
+    renderBar();
+    paintSearched();
+  }
+
+  // Repaint when another file opens.
+  window.addEventListener('doc:after-opened', () => setTimeout(paintSearched, 120));
+
+  // The bar sits right above the editor (below the tab strip, if any).
+  function attachBar() {
+    const editor = document.querySelector('.cm-editor');
+    const holder = editor && editor.parentElement;
+    const host = holder && holder.parentElement;
+    if (!host) return;
+    if (bar.parentElement === host && bar.nextElementSibling === holder) return;
+    host.insertBefore(bar, holder);
+    if (getComputedStyle(host).display !== 'flex') {
+      host.style.display = 'flex';
+      host.style.flexDirection = 'column';
+      holder.style.flex = holder.style.flex || '1 1 auto';
+      holder.style.minHeight = '0';
+    }
+  }
+
   // ----------------------------------------------------------- applying ---
 
   async function applyOne(edit, state, card) {
@@ -689,11 +844,16 @@
   }
 
   async function applyEdits(msg) {
-    const { edits } = parseEdits(msg.content);
+    if (msg.mode === 'search') {
+      const hits = parseHighlights(msg.content);
+      if (hits.length) showSearched(hits, 0);
+      else setStatus('No related places were marked.');
+    }
+    const { edits } = parseEdits(msg.content.replace(HIGHLIGHT_RE, ''));
     if (!edits.length) return;
-    if (msg.mode === 'read') {
-      // Read-only: never touch the files, even if the model wrote edits anyway.
-      msg.edits = edits.map(() => ({ ok: false, error: 'not applied (read-only mode)' }));
+    if (msg.mode === 'read' || msg.mode === 'search') {
+      // Read and search modes never touch the files, even if the model wrote edits anyway.
+      msg.edits = edits.map(() => ({ ok: false, error: `not applied (${msg.mode} mode, read-only)` }));
       save();
       render();
       return;
@@ -804,8 +964,22 @@
     .ol-chat-input:focus { outline: none; border-color: #098842; }
     .ol-chat-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
     .ol-chat-mode { font: inherit; font-size: 11px; color: inherit; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2);
-      border-radius: 14px; padding: 2px 10px; cursor: pointer; white-space: nowrap; }
-    .ol-chat-mode.read { background: rgba(15,111,197,.35); border-color: rgba(15,111,197,.7); }
+      border-radius: 14px; padding: 2px 0; cursor: pointer; white-space: nowrap; width: 84px; flex: 0 0 84px; text-align: center; overflow: hidden; }
+    .ol-chat-mode[data-mode="read"] { background: rgba(15,111,197,.35); border-color: rgba(15,111,197,.7); }
+    .ol-chat-mode[data-mode="search"] { background: rgba(255,193,7,.3); border-color: rgba(255,193,7,.8); }
+    .ol-chat-hits { margin-top: 4px; display: flex; flex-direction: column; gap: 3px; }
+    .ol-chat-hit { display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; padding: 3px 6px; border-left: 3px solid #ffc107;
+      background: rgba(255,193,7,.1); border-radius: 3px; }
+    .ol-chat-hit .ol-chat-ref-link { padding: 0; max-width: 100%; }
+    .ol-chat-hit-kind { font-size: 10px; text-transform: uppercase; opacity: .7; }
+    .ol-chat-hit-note { font-size: 11px; opacity: .85; width: 100%; }
+    .ol-searched-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 3px 10px; background: #ffd500; color: #1b222c;
+      font: 12px system-ui, "Segoe UI", sans-serif; }
+    .ol-searched-bar[hidden] { display: none; }
+    .ol-searched-bar .ol-searched-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ol-searched-bar button { font: inherit; border: 0; background: rgba(0,0,0,.08); border-radius: 4px; padding: 0 7px; cursor: pointer; color: inherit; }
+    .ol-searched-bar button:disabled { opacity: .35; cursor: default; }
+    .ol-searched-bar .ol-searched-close { background: none; font-size: 15px; line-height: 1; padding: 0 4px; }
     .ol-chat-send { font: inherit; border: 0; border-radius: 14px; padding: 3px 14px; background: #098842; color: #fff; cursor: pointer; }
     .ol-chat-send.stop { background: #b83a33; }
     .ol-chat button:disabled, .ol-chat select:disabled { opacity: .4; cursor: default; }
@@ -814,6 +988,7 @@
   const scan = () => {
     if (!style.isConnected && document.head) document.head.appendChild(style);
     attach();
+    attachBar();
   };
   const start = () => {
     new MutationObserver(scan).observe(document.documentElement, { childList: true, subtree: true });

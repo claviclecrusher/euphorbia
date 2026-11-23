@@ -68,9 +68,21 @@ Rules for edits:
   every edit and accepts or rejects it.
 
 Each user message starts with its mode:
-- [Mode: write] you may change the project with edit blocks as described above.
-- [Mode: read-only] do not write any edit blocks; read what you need and answer only. If the user
-  asks for a change, describe it in words (or show the new text) and say they can switch to write mode.
+- [Mode: edit] you may change the project with edit blocks as described above.
+- [Mode: read] do not write any edit blocks; read what you need and answer only. If the user asks
+  for a change, describe it in words (or show the new text) and say they can switch to edit mode.
+- [Mode: search] do not write edit blocks. Find the places in the project that relate to the
+  user's passage or question, and mark each with a highlight tag. Look for:
+    notation  - places that use the same notation (symbols, macros, variable names) as the passage
+    experiment - experiments, results, figures or tables that test or report on it
+    theory    - definitions, assumptions, theorems, derivations it relies on or that rely on it
+    citation  - \\cite commands for works related to it
+    reference - the matching .bib entries
+  Use search for notation tokens and labels, and read_unit to check each place before marking it.
+  Write one tag per place, then at most three short sentences summarizing what you found:
+  <highlight file="sections/method.tex" lines="12-14" kind="notation" note="defines lambda as the curvature weight"/>
+  Use 1-based line numbers from read_unit/read_file/search. Mark only places that really relate;
+  prefer precise line ranges over whole sections.
 
 Passages the user points at are given as references with their file and line numbers.
 Older parts of a long conversation are shown summarized; read_history opens them.
@@ -304,7 +316,7 @@ function chatMessages(history) {
     if (role === 'user') {
       const refs = refsText(m.refs);
       if (refs) content = `${refs}\n\n${content}`;
-      content = `[Mode: ${m.mode === 'read' ? 'read-only' : 'write'}]\n${content}`;
+      content = `[Mode: ${m.mode === 'read' ? 'read' : m.mode === 'search' ? 'search' : 'edit'}]\n${content}`;
     }
     if (!content.trim()) continue;
     if (out.length && out[out.length - 1].role === role) out[out.length - 1].content += `\n\n${content}`;
