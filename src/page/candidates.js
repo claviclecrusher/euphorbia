@@ -357,10 +357,13 @@
     input.type = 'text';
     input.placeholder = 'Describe the change (Enter to run, Esc to cancel)';
     input.spellcheck = false;
+    const model = document.createElement('select');
+    model.className = 'ol-ai-model';
+    model.title = 'Model';
     const go = document.createElement('button');
     go.type = 'button';
     go.textContent = 'Edit';
-    row.append(input, go);
+    row.append(input, model, go);
     const status = document.createElement('div');
     status.className = 'ol-ai-status';
     box.append(row, status);
@@ -372,9 +375,22 @@
     box.style.top = `${Math.max(8, (coords ? coords.top : content.top) - 64)}px`;
     document.body.appendChild(box);
 
-    aiBridge().info().then((info) => {
-      if (info && !status.textContent) status.textContent = `${info.label} \u00b7 ${last.number - first.number + 1} line(s)`;
+    const lines = `${last.number - first.number + 1} line(s)`;
+    aiBridge().info('edit').then((info) => {
+      if (!info || !info.choices.length) {
+        model.hidden = true;
+        status.textContent = 'No AI model is set up yet.';
+        addSettingsLink(status);
+        return;
+      }
+      for (const c of info.choices) model.add(new Option(c.label, c.id, false, c.id === info.selected));
+      if (!status.textContent) status.textContent = lines;
     });
+    model.addEventListener('change', () => {
+      aiBridge().select('edit', model.value);
+      input.focus();
+    });
+    model.addEventListener('keydown', (e) => e.stopPropagation());
 
     let busy = false;
     const run = async () => {
@@ -385,7 +401,9 @@
       go.disabled = true;
       status.textContent = 'Thinking\u2026';
       const doc = view.state.doc;
+      model.disabled = true;
       const res = await aiBridge().edit({
+        choiceId: model.value,
         instruction,
         selection: original,
         before: doc.sliceString(doc.line(Math.max(1, first.number - 20)).from, first.from),
@@ -397,6 +415,7 @@
         busy = false;
         input.disabled = false;
         go.disabled = false;
+        model.disabled = false;
         status.textContent = (res && res.error) || 'Failed.';
         status.classList.add('ol-ai-error');
         if (/AI Settings/.test(status.textContent)) addSettingsLink(status);
@@ -445,7 +464,8 @@
     .ol-ai-row input { flex: 1; padding: 6px 8px; font: inherit; border: 1px solid #afb5c0; border-radius: 6px; outline: none; }
     .ol-ai-row input:focus { border-color: #098842; box-shadow: 0 0 0 1px #098842; }
     .ol-ai-row button { font: inherit; border: 0; border-radius: 16px; padding: 4px 14px; background: #098842; color: #fff; cursor: pointer; }
-    .ol-ai-row button:disabled, .ol-ai-row input:disabled { opacity: .6; }
+    .ol-ai-row button:disabled, .ol-ai-row input:disabled, .ol-ai-row select:disabled { opacity: .6; }
+    .ol-ai-row select { max-width: 40%; font: inherit; font-size: 12px; border: 1px solid #afb5c0; border-radius: 6px; padding: 0 4px; background: #fff; }
     .ol-ai-status { font-size: 11px; color: #6b7280; margin-top: 5px; min-height: 14px; }
     .ol-ai-status.ol-ai-error { color: #b83a33; }
     .ol-ai-link { font: inherit; border: 0; background: none; color: #0f6fc5; padding: 0; cursor: pointer; text-decoration: underline; }
@@ -484,6 +504,53 @@
     });
     view.focus();
   }
+
+  // Inserts an edit block replacing `find` with `replace` in the editor's
+  // document. `find` must occur exactly once (an exact match first, then a
+  // match that ignores trailing spaces). The block spans whole lines.
+  function insertEdit(view, find, replace, by) {
+    const doc = view.state.doc;
+    const all = doc.toString();
+    const norm = (t) => t.replace(/[ \t]+$/gm, '');
+    let at = -1;
+    let len = 0;
+    const i = all.indexOf(find);
+    if (find && i >= 0 && all.indexOf(find, i + 1) < 0) {
+      at = i;
+      len = find.length;
+    } else if (find) {
+      // Retry on whole lines with trailing whitespace ignored.
+      const want = norm(find).split('\n');
+      const lines = all.split('\n');
+      const hits = [];
+      for (let n = 0; n + want.length <= lines.length; n++) {
+        if (want.every((w, k) => norm(lines[n + k]) === w)) hits.push(n);
+      }
+      if (hits.length === 1) {
+        at = doc.line(hits[0] + 1).from;
+        len = doc.line(hits[0] + want.length).to - at;
+      } else if (hits.length > 1) {
+        return { ok: false, error: 'The text to change appears more than once in the file.' };
+      }
+    }
+    if (at < 0) return { ok: false, error: 'The text to change was not found in the file (it may have changed).' };
+    const first = doc.lineAt(at);
+    const last = doc.lineAt(at + len);
+    if (overlapsAny(doc, first.from, last.to)) return { ok: false, error: 'That part of the file is already inside an edit or candidates block.' };
+    const original = doc.sliceString(first.from, last.to);
+    const updated = doc.sliceString(first.from, at) + replace + doc.sliceString(at + len, last.to);
+    if (updated === original) return { ok: false, error: 'The edit does not change anything.' };
+    const old = original.split('\n').map((l) => (l.length ? `%- ${l}` : '%-')).join('\n');
+    const head = `%%edit:begin by="${clean(by).slice(0, 80)}" at="${now()}"\n${old}\n%%edit:new\n`;
+    view.dispatch({
+      changes: { from: first.from, to: last.to, insert: `${head}${updated}\n%%edit:end` },
+      selection: { anchor: first.from + head.length },
+      scrollIntoView: true,
+      userEvent: 'input.candidates',
+    });
+    return { ok: true, line: first.number };
+  }
+  window.__olDesktopEdits = { insertEdit };
 
   // ------------------------------------------------------------ editor ---
 

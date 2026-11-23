@@ -14,8 +14,15 @@ contextBridge.exposeInMainWorld('overleafDesktop', {
   ai: {
     edit: (request) => ipcRenderer.invoke('ai:edit', request),
     cancel: () => ipcRenderer.send('ai:cancel'),
-    info: () => ipcRenderer.invoke('ai:info'),
+    info: (purpose) => ipcRenderer.invoke('ai:info', purpose),
+    select: (purpose, choiceId) => ipcRenderer.send('ai:select', purpose, choiceId),
     openSettings: () => ipcRenderer.send('ai:open-settings'),
+    chatStart: (request) => ipcRenderer.send('ai:chat-start', request),
+    chatCancel: (requestId) => ipcRenderer.send('ai:chat-cancel', requestId),
+    onChatEvent: (callback) => ipcRenderer.on('ai:chat-event', (_e, ev) => callback(ev)),
+    reindex: (projectId) => ipcRenderer.invoke('ai:reindex', projectId),
+    sendRef: (ref) => ipcRenderer.send('ai:ref', ref),
+    onRef: (callback) => ipcRenderer.on('ai:ref', (_e, ref) => callback(ref)),
   },
   split: {
     send: (channel, payload) => {
