@@ -19,6 +19,9 @@
 
   const PANE = window.__olDesktopPane || 0; // 1 main page, 2 bottom pane, 0 other windows
   if (!PANE) return;
+  // overleaf.com has its own editor tabs (for paid projects); the app's tabs,
+  // and the split editor built on them, are left out there.
+  if (/(^|\.)overleaf\.com$/i.test(location.hostname)) return;
   const m = location.pathname.match(/^\/project\/([0-9a-f]{24})\/?$/);
   if (!m) return;
   const projectId = m[1];
