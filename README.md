@@ -110,8 +110,8 @@ who started the edit and when.
 
 Every edit block also shows its place among all edits in the project (`‹ 3/7 ›`);
 the arrows move to the previous or next edit, opening other files as needed.
-**Accept all** / **Reject all** settle every edit in the project after a
-confirmation. Edits in files other than the open one are counted from the app's
+Edit blocks are accepted or rejected one by one (Accept all / Reject all are for AI
+suggestions only, see below). Edits in files other than the open one are counted from the app's
 copy of the project, so a new edit in another file can take a little while to be
 counted.
 
@@ -125,6 +125,25 @@ The new text is what compiles; the old text is kept in the source as comments:
 
 ## AI
 
+### AI suggestions (only you see them)
+
+Changes made by the AI (`Ctrl+K` and chat edits) are **AI suggestions**, not edit
+blocks. They are kept only in this app on this computer (per project); the file
+on the server keeps the original text, so collaborators and the PDF see the
+original until you press **Accept**, which writes the suggestion into the file.
+**Reject** discards it. In the editor the original lines are marked purple and the
+suggested text appears below them in a blue box, headed by the model and the time.
+
+While there are AI suggestions in the project, one purple bar above the editor
+shows how many there are, with **Files** (the files that have suggestions and how
+many each; click one to open it at its first suggestion) and **Accept all** /
+**Reject all**. These apply only to
+AI suggestions; edit blocks made by people are left alone. Suggestions count
+together with edit blocks in each item's `‹ n/N ›`. A suggestion cannot be edited before it is accepted (accept it, then
+edit, or ask the AI again). If the original text changes before you accept (for
+example a collaborator rewrites it), the suggestion no longer matches and is not
+shown; Accept refuses it.
+
 ### Connections and models
 
 **File → AI Settings…** holds the connections: Claude (API key), OpenAI (API key),
@@ -135,10 +154,23 @@ Every listed model of every working connection appears in the model menus of
 `Ctrl+K` and the chat panel. Keys stay on this computer (encrypted with the system
 keychain when available) and are used only by the app, never by the Overleaf page.
 
+### Writing style
+
+Text the AI writes into the paper (Ctrl+K rewrites and chat edits) follows a set of
+writing rules for AI research papers, shown and editable in **AI Settings → Writing
+style**: short, plain sentences (about 15-25 words) with one idea each; no filler
+or inflated words; "we" and active voice; present tense for claims and method, past
+tense for experiments run; precise claims with numbers instead of adjectives; one
+term per concept and the paper's own notation; defined abbreviations; and LaTeX
+conventions such as `Figure~\ref{...}`. The rules also forbid adding or dropping
+claims when rewriting and guessing author names from citation keys. Untick the box
+to turn them off, edit the text to make them your own, or **Reset to default**.
+Chat replies themselves are not affected.
+
 ### Ctrl+K: edit the selection
 
 Select lines, press `Ctrl+K`, pick a model, type what to change and press Enter.
-The rewrite comes back as an edit with diff (**Accept** / **Reject**) marked
+The rewrite comes back as an AI suggestion (**Accept** / **Reject**) marked
 `AI (<model>)`. The selection and up to 20 lines around it are sent.
 
 ### AI Chat panel
@@ -146,9 +178,9 @@ The rewrite comes back as an edit with diff (**Accept** / **Reject**) marked
 The panel under File tree / File outline (collapsible, resizable; widen the left
 sidebar for more room) is a chat about the whole project. `Ctrl+L` adds the
 selected lines to the message as a link (`main.tex:12-18`); clicking a link jumps
-there. When you ask for a change, the model's edits are added to the files as
-edits with diff for Accept / Reject; an edit that can't be placed is listed with
-the reason and a **Try again** button.
+there. When you ask for a change, the model's edits become AI suggestions in the
+files (no file is switched or changed until you accept); an edit that can't be
+placed is listed with the reason and a **Try again** button.
 
 The **mode** button next to Send cycles through three modes, and each message
 carries its mode to the model:
@@ -176,9 +208,22 @@ The model does not receive the whole project. It gets an index in which every
 paragraphs, figures, tables, algorithms, equations, theorems), each with an id
 (`main.tex#12`), a line range and a one-line summary; `.bib` files are listed by
 their citation keys. It reads text through tools the app answers from a local copy
-of the project: `read_unit(id)`, `read_file(path, lines)`, `search(text)`,
-`expand(id)` (lists the units inside a file or unit when the index is shortened)
-and `read_history(id)`.
+of the project (the open file is read live):
+
+- `read_unit(ids)`: exact text of one or several units;
+- `read_file(path, lines)`: exact lines;
+- `search(text)`: exact text across the project, each hit labelled with its unit;
+- `find_related(text)`: units about the same topic even with different wording
+  (needs an embedding model, see below);
+- `expand(id)`: the units inside a file or unit when the index is shortened;
+- `read_history(id)`: an older, summarized part of the conversation.
+
+Changes and search results are tool calls too: in Edit mode the model calls
+`propose_edit(file, find, replace)` and in Search mode `mark(file, lines, kind,
+note)`. The app checks each one immediately (the text must exist exactly once,
+not in a `.bib` file or inside an edit/candidates block; lines must exist) and
+tells the model what was wrong, so it can fix the call within the same answer.
+Read mode offers neither tool.
 
 **Summaries.** Set a *summary model* in AI Settings (a local model costs nothing).
 Summaries are written in the background when a project opens and every two
@@ -194,12 +239,28 @@ sent as they are. Older ones are grouped into blocks of up to 8,000 characters a
 replaced by a short summary (summary model, cached); the model can reopen a block
 with `read_history`.
 
+**Related search.** Choose an *embedding model* in AI Settings (for example
+`bge-m3` on the local Ollama server, which handles Korean and English). Each unit
+is embedded in the background, cached by its content like the summaries;
+`find_related` ranks units by meaning plus word overlap. Passages pointed at with
+`Ctrl+L` also bring the most related units into the request automatically.
+
+**Efficiency.** The system prompt and the index are kept byte-identical between
+requests (the open file, older-conversation summaries and related units travel in
+the newest message instead), so Claude's prompt cache covers them across rounds
+and questions. Claude uses effort `high` in Edit and Search mode and `low` in Read
+mode, and the first request is measured with the token-counting API. OpenAI and
+local models stream their answers and tool calls. The project copy is downloaded
+again only when Overleaf reports a newer `lastUpdated`. While a chat runs on the
+local server, background summarizing on that server waits.
+
 **Token limit.** For Claude and OpenAI, a chat request that has used, or is about
 to use, more tokens than the limit in AI Settings (default 200,000) pauses and asks
 **Continue** or **Stop**. Local models are not limited.
 
 **Limits.** read_file returns up to 400 lines, read_unit up to 20,000 characters,
-search up to 40 matches; at most 8 lookup rounds per request; above 60,000
+search up to 40 matches, read_unit up to 12 units per call; at most 10 lookup
+rounds per request; above 60,000
 characters the index lists sections only and `expand` opens the rest. Units are
 summarized from up to 8,000 characters of their text, 8 per call.
 

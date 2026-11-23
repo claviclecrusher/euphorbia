@@ -423,10 +423,12 @@
     indexBar.className = 'ol-chat-index';
     if (!st || st.projectId !== projectId) return;
     const units = st.units != null ? `${st.summarized}/${st.units} units summarized` : '';
-    if (st.state === 'summarizing') {
+    if (st.state === 'embedding') {
+      indexBar.textContent = 'Indexing meaning for related-part search\u2026';
+    } else if (st.state === 'summarizing') {
       indexBar.textContent = `Indexing: ${st.done}/${st.total} with ${st.model}\u2026`;
     } else if (st.state === 'ready') {
-      indexBar.textContent = `Index ready \u00b7 ${st.files} files \u00b7 ${units}`;
+      indexBar.textContent = `Index ready \u00b7 ${st.files} files \u00b7 ${units}${st.related ? ' \u00b7 related search on' : ''}`;
     } else if (st.state === 'no-model') {
       indexBar.textContent = `Index without summaries (${st.files} files). `;
       const link = el('button', 'ol-chat-link', 'Choose a summary model');
@@ -536,13 +538,14 @@
     const head = el('div', 'ol-chat-edit-head');
     const name = el('button', 'ol-chat-ref-link', `✎ ${edit.file}${state && state.line ? `:${state.line}` : ''}`);
     name.type = 'button';
-    name.addEventListener('click', () => {
-      if (state && state.line) revealLines(edit.file, state.line, state.line);
-      else openPath(edit.file);
+    name.addEventListener('click', async () => {
+      if (state && state.line) return revealLines(edit.file, state.line, state.line);
+      await openPath(edit.file);
+      if (state && state.proposalId && window.__olDesktopEdits) setTimeout(() => window.__olDesktopEdits.revealProposal(state.proposalId), 150);
     });
     const st = el('span', 'ol-chat-edit-state');
     if (!state) st.textContent = 'pending';
-    else if (state.ok) st.textContent = 'added for review';
+    else if (state.ok) st.textContent = state.proposalId ? 'suggested (only you see it until you accept)' : 'added for review';
     else st.textContent = state.error || 'not applied';
     st.classList.toggle('ok', !!(state && state.ok));
     st.classList.toggle('error', !!(state && !state.ok));
@@ -571,8 +574,13 @@
       return box;
     }
     if (msg.by) box.appendChild(el('div', 'ol-chat-by', msg.by));
-    const hits = parseHighlights(msg.content);
-    const { parts, edits } = parseEdits(msg.content.replace(HIGHLIGHT_RE, '').replace(/\n{3,}/g, '\n\n'));
+    const hits = Array.isArray(msg.hits) ? msg.hits : parseHighlights(msg.content);
+    const legacy = parseEdits(msg.content.replace(HIGHLIGHT_RE, '').replace(/\n{3,}/g, '\n\n'));
+    // Answers from v0.15 on carry their edits as checked proposals; older ones as text.
+    const parts = Array.isArray(msg.proposals)
+      ? [{ text: msg.content }, ...msg.proposals.map((_, i) => ({ edit: i }))]
+      : legacy.parts;
+    const edits = Array.isArray(msg.proposals) ? msg.proposals : legacy.edits;
     for (const p of parts) {
       if (p.text != null) {
         if (p.text.trim()) box.appendChild(textNode(p.text));
@@ -664,7 +672,7 @@
       requestId: id,
       choiceId: model.value,
       projectId,
-      history: messages.map((mm) => ({ role: mm.role, content: mm.content, refs: mm.refs, mode: mm.mode })),
+      history: messages.map((mm) => ({ role: mm.role, content: mm.content, refs: mm.refs, mode: mm.mode, proposals: mm.proposals, hits: mm.hits })),
       mode,
       openDoc: v ? { path: currentPath(), text: v.state.doc.toString() } : null,
     });
@@ -687,6 +695,7 @@
       setStatus(ev.text, true);
     } else if (ev.type === 'usage') {
       active.used = ev.used;
+      setStatus(`${Math.round(ev.used / 1000)}k tokens so far${ev.cached ? ` (${Math.round(ev.cached / 1000)}k from cache)` : ''}`);
     } else if (ev.type === 'pause') {
       const ask = el('div', 'ol-chat-pause');
       ask.append(
@@ -719,7 +728,7 @@
       setStatus(ev.text, true);
       render();
     } else if (ev.type === 'done') {
-      const msg = { role: 'assistant', content: ev.text, by: ev.by, edits: [], mode: active.mode };
+      const msg = { role: 'assistant', content: ev.text, by: ev.by, edits: [], mode: active.mode, proposals: ev.proposals || [], hits: ev.hits || [] };
       const conv = convs.find((c) => c.id === active.conv);
       if (conv) conv.messages.push(msg);
       active = null;
@@ -736,7 +745,7 @@
   // is open, with a yellow bar above the editor while the state is on.
 
   let searched = null; // { hits, at }
-  const bar = el('div', 'ol-searched-bar');
+  const bar = el('div', 'ol-searched-bar ol-topbar');
   bar.hidden = true;
   const barText = el('span', 'ol-searched-text');
   const barPrev = el('button', '', '\u2039');
@@ -812,7 +821,10 @@
     const holder = editor && editor.parentElement;
     const host = holder && holder.parentElement;
     if (!host) return;
-    if (bar.parentElement === host && bar.nextElementSibling === holder) return;
+    // Bars above the editor (class ol-topbar) form one run right before it.
+    let n = bar.parentElement === host ? bar.nextElementSibling : null;
+    while (n && n !== holder && n.classList.contains('ol-topbar')) n = n.nextElementSibling;
+    if (n === holder) return;
     host.insertBefore(bar, holder);
     if (getComputedStyle(host).display !== 'flex') {
       host.style.display = 'flex';
@@ -832,12 +844,12 @@
       if (card) render();
       return false;
     }
-    const ok = await openPath(edit.file);
-    let res;
-    if (!ok) res = { ok: false, error: 'File not found in the project.' };
-    else if (!window.__olDesktopEdits || !view()) res = { ok: false, error: 'Editor not ready.' };
-    else res = window.__olDesktopEdits.insertEdit(view(), edit.find, edit.replace, state.by || 'AI');
-    Object.assign(state, { ok: res.ok, error: res.error || null, line: res.line || null });
+    // AI edits become suggestions kept on this computer until accepted.
+    const res = window.__olDesktopEdits
+      ? window.__olDesktopEdits.addProposal({ file: edit.file, find: edit.find, replace: edit.replace, by: state.by || 'AI' })
+      : { ok: false, error: 'Editor not ready.' };
+    if (res.ok) state.proposalId = res.id;
+    Object.assign(state, { ok: res.ok, error: res.error || null, line: null });
     save();
     if (card) render();
     return res.ok;
@@ -845,11 +857,11 @@
 
   async function applyEdits(msg) {
     if (msg.mode === 'search') {
-      const hits = parseHighlights(msg.content);
+      const hits = Array.isArray(msg.hits) ? msg.hits : parseHighlights(msg.content);
       if (hits.length) showSearched(hits, 0);
       else setStatus('No related places were marked.');
     }
-    const { edits } = parseEdits(msg.content.replace(HIGHLIGHT_RE, ''));
+    const edits = Array.isArray(msg.proposals) ? msg.proposals : parseEdits(msg.content.replace(HIGHLIGHT_RE, '')).edits;
     if (!edits.length) return;
     if (msg.mode === 'read' || msg.mode === 'search') {
       // Read and search modes never touch the files, even if the model wrote edits anyway.
