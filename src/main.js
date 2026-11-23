@@ -32,7 +32,10 @@ const ai = require('./ai');
   }
 })();
 
-const APP_ICON = path.join(__dirname, 'icon.png');
+// Window icon. Windows takes it from the exe (icon.ico: the round small icon
+// at 64 px and below, the full icon above); Linux uses the round small icon,
+// which is what title bars, docks and task lists show.
+const APP_ICON = process.platform === 'win32' ? undefined : path.join(__dirname, 'icon-small.png');
 
 const configPath = () => path.join(app.getPath('userData'), 'config.json');
 

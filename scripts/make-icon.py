@@ -1,5 +1,6 @@
 # Euphorbia icon: thin curved leaves rising from the crown, everything clipped to a
-# circle centred on the leaf base. Usage: python3 -I mkicon.py <out.svg>
+# circle centred on the leaf base. Usage: python3 -I scripts/make-icon.py build/icon-small.svg
+# (the round icon used at small sizes; then run scripts/render-icons.sh)
 import math, sys
 
 BASE = (512, 340)     # where the leaves start (top of the body)

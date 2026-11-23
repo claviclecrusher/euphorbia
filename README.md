@@ -1,6 +1,6 @@
 # Euphorbia
 
-<img src="build/icon.svg" width="96" alt="Euphorbia icon: a Sotetsukirin">
+<img src="build/icon.svg" width="96" alt="Euphorbia icon: a Sotetsukirin"> <img src="build/icon-small.svg" width="48" alt="Small round icon">
 
 *Euphorbia is an unofficial project. It is not affiliated with, endorsed by or sponsored by Overleaf or Digital Science; "Overleaf" is used only to name the servers it connects to.*
 
