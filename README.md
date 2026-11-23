@@ -116,24 +116,41 @@ The new text is what compiles; the old text is kept in the source as comments:
     We propose a novel method.
     %%edit:end
 
-## AI edits
+## AI
 
-Select some lines, press `Ctrl+K`, type what to change ("make this more concise",
-"fix the grammar", "translate to English") and press Enter. The model's rewrite
-comes back as an edit with diff: the original in red, the rewrite in green, with
-**Accept** / **Reject**, marked `AI (<model>)`.
+### Connections and models
 
-Set it up in **File → AI Settings…**: choose Claude, OpenAI, or a local model
-served through an OpenAI-compatible endpoint (Ollama `http://localhost:11434/v1`,
-LM Studio `http://localhost:1234/v1`), and enter the API key and model. **Save &
-Test** sends a one-line test request. Keys are stored on this computer, encrypted
-with the system keychain when one is available, and are only used by the app
-itself, never by the Overleaf page.
+**File → AI Settings…** holds the connections: Claude (API key), OpenAI (API key),
+and a local OpenAI-compatible server (address, e.g. Ollama
+`http://<host>:11434/v1`). Each has a list of models, one per line; **Fetch model
+list** asks the server what it offers and **Save & Test** sends a one-line request.
+Every listed model of every working connection appears in the model menus of
+`Ctrl+K` and the chat panel. Keys stay on this computer (encrypted with the system
+keychain when available) and are used only by the app, never by the Overleaf page.
 
-The selected lines and up to 20 lines before and after them are sent to the
-chosen provider. For Claude the default model is `claude-opus-5-5`; on models
-that support it, a request the model declines is retried on a fallback model
-(server-side refusal fallbacks).
+### Ctrl+K: edit the selection
+
+Select lines, press `Ctrl+K`, pick a model, type what to change and press Enter.
+The rewrite comes back as an edit with diff (**Accept** / **Reject**) marked
+`AI (<model>)`. The selection and up to 20 lines around it are sent.
+
+### AI Chat panel
+
+The panel under File tree / File outline (collapsible, resizable; widen the left
+sidebar for more room) is a chat about the whole project. `Ctrl+L` adds the
+selected lines to the message as a link (`main.tex:12-18`); clicking a link jumps
+there. When you ask for a change, the model's edits are added to the files as
+edits with diff for Accept / Reject; an edit that can't be placed is listed with
+the reason and a **Try again** button. The conversation is kept per project on
+this computer; **+** starts a new one.
+
+The model does not receive the whole project. It gets an index: each file's
+sections with line ranges and first sentence, labels, `\input`s and citation keys.
+It reads what it needs with two tools, `read_file(path, start_line, end_line)` and
+`search(query)`, which the app answers from a copy of the project (rebuilt from
+the project zip when older than two minutes, or with **↻**; the open file is
+always read live). The copy and its `index.md` are kept in the app's data folder
+under `ai-index/`.
 
 Developer Tools moved from `Ctrl+Shift+I` to `F12`.
 

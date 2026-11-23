@@ -381,7 +381,7 @@ function showSetup() {
 // -------------------------------------------------------------------- ipc ---
 
 // Scripts the page preload injects before the page's own scripts run.
-const EARLY_PAGE_SCRIPT = ['candidates.js', 'shortcut-help.js', 'editor-tabs.js']
+const EARLY_PAGE_SCRIPT = ['candidates.js', 'shortcut-help.js', 'editor-tabs.js', 'ai-chat.js']
   .map((f) => fs.readFileSync(path.join(__dirname, 'page', f), 'utf8'))
   .join('\n;\n');
 
