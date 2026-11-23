@@ -27,15 +27,22 @@ The **Server** menu lists the saved servers; picking one switches to it
 **Remove Current Server…** drops the current one from the list. Sign-in state is
 kept separately for each server.
 
-Sign-in flows that pass through another site (Google, ORCID, institutional SSO)
-stay inside the app window when they start from a login page. Any other link that
-leaves the server opens in the system browser.
+Only email and password sign-in is supported. Google, ORCID and institutional SSO
+buttons are hidden, because Google refuses sign-in from embedded browsers and a
+session created in the system browser cannot be passed to the app. If your
+overleaf.com account has no password yet, set one with "Forgot your password?" on
+the login page. Links that leave the server open in the system browser.
 
-Google refuses sign-in from embedded browsers, so "Log in with Google" on
-overleaf.com does not complete inside the app, and a session created in the system
-browser cannot be passed to the app. The app explains this when you click the
-Google button: set a password for the Overleaf account and sign in with email and
-password instead.
+## Copying a project to another server
+
+Tick one project in the project list and choose **More → Make a copy to other
+server** (or **File → Copy Project to Another Server…**, which also works from
+inside an open project). The app downloads the project as a zip from the current
+server and uploads it to the chosen server as a new project. You must be signed in
+to both servers in the app.
+
+The copy contains the project's files. History, comments, tracked changes and
+collaborators are not copied, and the target server's upload size limit applies.
 
 The server list and window position are stored in `config.json` in the user data
 folder (`~/.config/Overleaf Desktop/` on Linux, `%APPDATA%\Overleaf Desktop\` on
