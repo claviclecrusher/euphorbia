@@ -3,6 +3,7 @@
 const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, net, shell, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const updater = require('./updater');
 
 // ---------------------------------------------------------------- config ---
 
@@ -308,6 +309,8 @@ function buildMenu() {
           },
         },
         { type: 'separator' },
+        { label: `업데이트 확인… (현재 ${app.getVersion()})`, click: () => updater.check(true) },
+        { type: 'separator' },
         { label: '종료', role: 'quit' },
       ],
     },
@@ -382,6 +385,7 @@ if (!app.requestSingleInstanceLock()) {
     buildMenu();
     if (config.serverUrl) createMainWindow();
     else showSetup();
+    updater.init();
   });
 
   app.on('window-all-closed', () => app.quit());
