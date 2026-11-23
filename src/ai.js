@@ -129,6 +129,14 @@ function settings() {
     out[p] = e;
   }
   out.summary = typeof s.summary === 'string' ? s.summary : '';
+  // One local model for chat, summaries and song-1, so the local server never
+  // swaps models on its GPU. Earlier lists keep the one used for summaries.
+  if (out.local.models.length > 1) {
+    const sum = out.summary.startsWith('local:') ? out.summary.slice(6) : '';
+    out.local.models = [out.local.models.includes(sum) ? sum : out.local.models[0]];
+  }
+  // A local summary model always means that one model.
+  if (out.summary.startsWith('local:')) out.summary = out.local.models[0] ? `local:${out.local.models[0]}` : '';
   out.styleEnabled = s.styleEnabled !== false;
   out.effort = EFFORTS.includes(s.effort) ? s.effort : 'low';
   out.style = typeof s.style === 'string' && s.style.trim() ? s.style : DEFAULT_STYLE;
@@ -233,7 +241,7 @@ function choices(s = settings(), opts = {}) {
 // summary model when that is local, else the first local model.
 function song1Parts(s = settings()) {
   if (!usable(s, 'local') || !s.local.models.length || !usable(s, 'claude')) return null;
-  const local = s.summary && s.summary.startsWith('local:') && s.local.models.includes(s.summary.slice(6)) ? s.summary.slice(6) : s.local.models[0];
+  const local = s.local.models[0];
   return {
     local: { s, provider: 'local', model: local, id: `local:${local}` },
     paid: { s, provider: 'claude', model: SONG1_PAID, id: `claude:${SONG1_PAID}`, effort: 'low' },
@@ -913,6 +921,20 @@ async function song1(c) {
   return { text: r.text, rounds: draft.rounds + r.rounds, stopped: r.stopped };
 }
 
+// Ask the local server to load the local model now (Ollama: an empty
+// /api/generate loads it), so the first request does not wait for loading.
+// Once per model per app session; other servers just ignore it.
+const warmed = new Set();
+function warmLocal() {
+  const s = settings();
+  const model = s.local.models[0];
+  if (!usable(s, 'local') || !model || warmed.has(model)) return;
+  warmed.add(model);
+  const base = String(s.local.baseURL || '').replace(/\/v1\/?$/, '');
+  fetch(`${base}/api/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) })
+    .catch(() => warmed.delete(model));
+}
+
 const pauses = new Map(); // `${sender.id}:${requestId}` -> resolve(boolean)
 const estimate = (chars) => Math.ceil(chars / 3.5);
 
@@ -1387,6 +1409,7 @@ function init(context) {
   // refresh the copy and summarize what changed, in the background.
   ipcMain.on('ai:project-open', (event, projectId) => {
     if (!fromServer(event) || !/^[0-9a-f]{24}$/.test(String(projectId))) return;
+    warmLocal();
     runIndexJob(String(projectId), event.sender);
   });
 

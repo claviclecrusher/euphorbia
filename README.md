@@ -40,7 +40,9 @@ On Ubuntu 24.04+ the AppImage needs `libfuse2` and may need `--no-sandbox`.
 ## AI
 
 Set up connections in **File → AI Settings…**: Claude, OpenAI, and/or a local
-OpenAI-compatible server such as Ollama. Keys stay on this computer.
+OpenAI-compatible server such as Ollama. Keys stay on this computer. The local connection has one model, used for
+everything local (chat, summaries, song-1), so the server never swaps models; it
+is loaded when you open a project.
 
 - **`Ctrl+K`** rewrites the selected lines.
 - **Chat panel** (under the file outline) answers questions about the whole

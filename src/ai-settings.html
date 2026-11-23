@@ -59,8 +59,9 @@
     <label class="f">Server address</label>
     <input data-k="baseURL" type="text" spellcheck="false" placeholder="http://localhost:11434/v1">
     <div class="note">Ollama: http://&lt;host&gt;:11434/v1 &middot; LM Studio: http://&lt;host&gt;:1234/v1</div>
-    <label class="f">Models (one per line)</label>
-    <textarea data-k="models" spellcheck="false" placeholder="e.g. qwen3.6:35b"></textarea>
+    <label class="f">Model</label>
+    <input data-k="models" type="text" spellcheck="false" placeholder="e.g. gpt-oss:120b">
+    <div class="note">One local model is used for everything local (chat, summaries, song-1), so the server keeps one model loaded instead of swapping.</div>
     <label class="f">API key (only if the server needs one)</label>
     <div class="row"><input data-k="key" type="password" autocomplete="off" spellcheck="false">
       <span class="state" data-k="state"></span><button class="link" data-a="clear" type="button">Remove</button></div>
@@ -162,8 +163,8 @@
       if (!res.ok) return out(p, res.error, 'err');
       const have = new Set(el(p, 'models').value.split('\n').map((s) => s.trim()).filter(Boolean));
       const add = res.models.filter((m) => !have.has(m));
-      if (!have.size && res.models.length) el(p, 'models').value = res.models.join('\n');
-      out(p, `${res.models.length} model(s) on the server${have.size && add.length ? `; not in your list: ${add.slice(0, 12).join(', ')}${add.length > 12 ? ', …' : ''}` : ''}`, 'ok');
+      if (!have.size && res.models.length) el(p, 'models').value = p === 'local' ? (res.models.find((m) => !/embed|bge|nomic|minilm/i.test(m)) || res.models[0]) : res.models.join('\n');
+      out(p, `${res.models.length} model(s) on the server${p === 'local' ? `: ${res.models.slice(0, 12).join(', ')}` : have.size && add.length ? `; not in your list: ${add.slice(0, 12).join(', ')}${add.length > 12 ? ', …' : ''}` : ''}`, 'ok');
     });
     fs(p).querySelector('[data-a="test"]').addEventListener('click', async (e) => {
       e.target.disabled = true; out(p, 'Saving and sending a test request…');
