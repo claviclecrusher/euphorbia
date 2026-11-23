@@ -41,8 +41,8 @@ function init() {
         manualCheck = false;
         show({
           type: 'info',
-          message: `새 버전 ${info.version}을 내려받는 중입니다.`,
-          detail: '다 받으면 다시 알려드립니다.',
+          message: `Downloading version ${info.version}.`,
+          detail: 'You will be notified when it is ready.',
         });
       }
       return;
@@ -52,9 +52,9 @@ function init() {
     promptOpen = true;
     const { response } = await show({
       type: 'info',
-      message: `새 버전 ${info.version}이 있습니다. (현재 ${app.getVersion()})`,
-      detail: '이 설치 방식은 자동 업데이트를 지원하지 않습니다. 다운로드 페이지에서 새 버전을 받아 설치하세요.',
-      buttons: ['다운로드 페이지 열기', '나중에'],
+      message: `Version ${info.version} is available. (You have ${app.getVersion()}.)`,
+      detail: 'This kind of install cannot update itself. Download the new version from the releases page.',
+      buttons: ['Open Download Page', 'Later'],
       defaultId: 0,
       cancelId: 1,
     });
@@ -65,7 +65,7 @@ function init() {
   autoUpdater.on('update-not-available', () => {
     if (!manualCheck) return;
     manualCheck = false;
-    show({ type: 'info', message: `최신 버전입니다. (${app.getVersion()})` });
+    show({ type: 'info', message: `You are up to date. (v${app.getVersion()})` });
   });
 
   autoUpdater.on('update-downloaded', async (info) => {
@@ -73,14 +73,16 @@ function init() {
     promptOpen = true;
     const { response } = await show({
       type: 'info',
-      message: `새 버전 ${info.version}이 준비됐습니다.`,
-      detail: '지금 재시작하면 바로 적용됩니다. 나중에를 고르면 앱을 종료할 때 적용됩니다.',
-      buttons: ['지금 재시작', '나중에'],
+      message: `Version ${info.version} is ready to install.`,
+      detail: 'Restart now to apply it, or choose Later to apply it when you quit the app.',
+      buttons: ['Restart Now', 'Later'],
       defaultId: 0,
       cancelId: 1,
     });
     promptOpen = false;
-    if (response === 0) autoUpdater.quitAndInstall();
+    // Silent install, then relaunch: the Windows installer runs without its
+    // wizard and reuses the existing install location.
+    if (response === 0) autoUpdater.quitAndInstall(true, true);
   });
 
   autoUpdater.on('error', (err) => {
@@ -89,7 +91,7 @@ function init() {
     manualCheck = false;
     show({
       type: 'error',
-      message: '업데이트를 확인하지 못했습니다.',
+      message: 'Could not check for updates.',
       detail: String((err && err.message) || err).slice(0, 500),
     });
   });
@@ -99,7 +101,7 @@ function init() {
 
 function check(manual) {
   if (!app.isPackaged) {
-    if (manual) show({ type: 'info', message: '개발 모드에서는 업데이트를 확인하지 않습니다.' });
+    if (manual) show({ type: 'info', message: 'Updates are not checked in development mode.' });
     return;
   }
   manualCheck = manual;

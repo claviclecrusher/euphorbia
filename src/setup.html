@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
-<title>서버 추가</title>
+<title>Add Server</title>
 <style>
-  body { font-family: system-ui, "Segoe UI", "Noto Sans KR", sans-serif; margin: 0; padding: 28px 32px;
+  body { font-family: system-ui, "Segoe UI", sans-serif; margin: 0; padding: 28px 32px;
          background: #f4f5f6; color: #1b222c; }
   h1 { font-size: 20px; margin: 0 0 8px; }
   p { font-size: 13px; color: #495365; margin: 0 0 16px; line-height: 1.5; }
@@ -22,17 +22,17 @@
 </style>
 </head>
 <body>
-  <h1>Overleaf 서버 추가</h1>
-  <p>접속할 Overleaf 서버의 주소를 입력하세요. 직접 운영하는 서버(예: <code>http://192.168.50.108</code>)와
-     overleaf.com 모두 쓸 수 있습니다.</p>
+  <h1>Add an Overleaf server</h1>
+  <p>Enter the address of the Overleaf server to connect to. Both self-hosted servers
+     (for example <code>http://192.168.1.10</code>) and overleaf.com work.</p>
   <form id="form">
-    <label for="url">서버 주소</label>
-    <input id="url" type="text" placeholder="http://서버주소" autofocus spellcheck="false">
-    <label for="name">이름 (선택)</label>
-    <input id="name" type="text" placeholder="비워 두면 주소로 표시" maxlength="40" spellcheck="false">
+    <label for="url">Server address</label>
+    <input id="url" type="text" placeholder="http://server-address" autofocus spellcheck="false">
+    <label for="name">Name (optional)</label>
+    <input id="name" type="text" placeholder="Shown as the address if left empty" maxlength="40" spellcheck="false">
     <div class="row">
-      <button id="btn" type="submit">연결</button>
-      <button id="official" type="button" class="link">overleaf.com 입력</button>
+      <button id="btn" type="submit">Connect</button>
+      <button id="official" type="button" class="link">Use overleaf.com</button>
     </div>
   </form>
   <div id="msg"></div>
@@ -50,7 +50,7 @@
     e.preventDefault();
     btn.disabled = true;
     msg.style.color = '#495365';
-    msg.textContent = '서버 확인 중…';
+    msg.textContent = 'Checking the server…';
     const res = await window.setup.save({ url: url.value, name: name.value });
     if (!res.ok) {
       msg.style.color = '#b83a33';
