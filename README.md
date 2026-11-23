@@ -135,7 +135,9 @@ original until you press **Accept**, which writes the suggestion into the file.
 suggested text appears below them in a blue box, headed by the model and the time.
 
 While there are AI suggestions in the project, one purple bar above the editor
-shows how many there are, with **Accept all** / **Reject all**. These apply only to
+shows how many there are, with **Files** (the files that have suggestions and how
+many each; click one to open it at its first suggestion) and **Accept all** /
+**Reject all**. These apply only to
 AI suggestions; edit blocks made by people are left alone. Suggestions count
 together with edit blocks in each item's `‹ n/N ›`. A suggestion cannot be edited before it is accepted (accept it, then
 edit, or ask the AI again). If the original text changes before you accept (for

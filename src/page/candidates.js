@@ -592,12 +592,80 @@
   topReject.type = 'button';
   topReject.textContent = 'Reject all';
   topReject.addEventListener('click', () => settleAllSuggestions(false));
-  topBar.append(topText, topAccept, topReject);
+  topAccept.className = 'ol-sugg-accept';
+  topReject.className = 'ol-sugg-reject';
+
+  // Files button: the files that have AI suggestions; a click opens one.
+  const topFiles = document.createElement('button');
+  topFiles.type = 'button';
+  topFiles.className = 'ol-sugg-files';
+  topFiles.textContent = 'Files \u25be';
+  topFiles.title = 'Files with AI suggestions';
+  const fileMenu = document.createElement('div');
+  fileMenu.className = 'ol-sugg-filemenu';
+  fileMenu.hidden = true;
+  // Above the editor and its toolbar, so the list can drop over them.
+  topBar.style.position = 'relative';
+  topBar.style.zIndex = '30';
+
+  async function openSuggestionFile(path) {
+    fileMenu.hidden = true;
+    if (path !== currentReviewPath()) {
+      if (!nav() || !(await nav().openPath(path))) return;
+    }
+    const v = storeView();
+    const first = v ? placedProposals(v.state.doc, path)[0] : null;
+    if (first) revealProposal(first.prop.id);
+  }
+
+  function renderFileMenu() {
+    fileMenu.textContent = '';
+    const counts = new Map();
+    for (const p of loadProposals()) counts.set(p.file, (counts.get(p.file) || 0) + 1);
+    const cur = currentReviewPath();
+    for (const [path, n] of Array.from(counts).sort((a, b) => a[0].localeCompare(b[0]))) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'ol-sugg-fileitem' + (path === cur ? ' current' : '');
+      const name = document.createElement('span');
+      name.textContent = path;
+      const count = document.createElement('span');
+      count.className = 'ol-sugg-filecount';
+      count.textContent = String(n);
+      item.append(name, count);
+      item.addEventListener('click', () => openSuggestionFile(path));
+      fileMenu.appendChild(item);
+    }
+  }
+
+  topFiles.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (fileMenu.hidden) {
+      renderFileMenu();
+      // Fixed to the page, under the button, so no editor layer covers it.
+      if (fileMenu.parentElement !== document.body) document.body.appendChild(fileMenu);
+      const r = topFiles.getBoundingClientRect();
+      fileMenu.style.top = `${r.bottom + 4}px`;
+      fileMenu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 430))}px`;
+    }
+    fileMenu.hidden = !fileMenu.hidden;
+  });
+  fileMenu.addEventListener('mousedown', (e) => e.stopPropagation());
+  window.addEventListener('mousedown', () => (fileMenu.hidden = true));
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') fileMenu.hidden = true;
+  });
+
+  topBar.append(topText, topFiles, topAccept, topReject);
 
   function updateTopBar() {
     const list = loadProposals();
     topBar.hidden = !list.length;
-    if (!list.length) return;
+    if (!list.length) {
+      fileMenu.hidden = true;
+      return;
+    }
+    if (!fileMenu.hidden) renderFileMenu();
     const files = new Set(list.map((p) => p.file)).size;
     topText.textContent = `${list.length} AI suggestion${list.length > 1 ? 's' : ''} in ${files} file${files > 1 ? 's' : ''} (only you see them until accepted)`;
   }
@@ -619,8 +687,17 @@
     .ol-sugg-topbar[hidden] { display: none; }
     .ol-sugg-toptext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ol-sugg-topbar button { font: inherit; border: 0; border-radius: 12px; padding: 1px 10px; cursor: pointer; color: #fff; white-space: nowrap; }
-    .ol-sugg-topbar button:first-of-type { background: #098842; }
-    .ol-sugg-topbar button:last-of-type { background: #b83a33; }
+    .ol-sugg-topbar .ol-sugg-accept { background: #098842; }
+    .ol-sugg-topbar .ol-sugg-reject { background: #b83a33; }
+    .ol-sugg-topbar .ol-sugg-files { background: #fff; color: #4c1d95; border: 1px solid #a78bfa; }
+    .ol-sugg-filemenu { position: fixed; z-index: 2147483000; font: 12px system-ui, "Segoe UI", sans-serif; min-width: 220px; max-width: 420px; max-height: 300px;
+      overflow-y: auto; background: #fff; border: 1px solid #c4b5fd; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.2); padding: 4px 0; }
+    .ol-sugg-filemenu[hidden] { display: none; }
+    .ol-sugg-fileitem { display: flex; width: 100%; justify-content: space-between; gap: 12px; text-align: left;
+      background: none; color: #1b222c; border: 0; border-radius: 0; padding: 5px 12px; font: inherit; cursor: pointer; }
+    .ol-sugg-fileitem:hover { background: #f1ecfb; }
+    .ol-sugg-fileitem.current { font-weight: 600; }
+    .ol-sugg-filecount { color: #6d28d9; }
   `;
   const startTopBar = () => {
     new MutationObserver(attachTopBar).observe(document.documentElement, { childList: true, subtree: true });
