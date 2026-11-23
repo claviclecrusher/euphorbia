@@ -15,6 +15,12 @@
     border: 1px solid #afb5c0; border-radius: 6px; font-family: inherit; }
   textarea { height: 64px; resize: vertical; font-family: ui-monospace, monospace; font-size: 12px; }
   .row { display: flex; gap: 6px; align-items: center; }
+  .models { display: flex; flex-direction: column; gap: 4px; }
+  .models .model { display: flex; gap: 6px; align-items: center; }
+  .models .model input { flex: 1; font-family: ui-monospace, monospace; font-size: 12px; padding: 5px 8px; }
+  .models button.del, .models button.add { width: 28px; height: 28px; padding: 0; font-size: 16px; line-height: 1; border-radius: 50%; }
+  .models button.add { align-self: flex-start; }
+  .models .empty { font-size: 12px; color: #6b7280; }
   .row input { flex: 1; }
   .state { font-size: 11px; color: #495365; white-space: nowrap; }
   .tools { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
@@ -39,7 +45,7 @@
     <label class="f">API key</label>
     <div class="row"><input data-k="key" type="password" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
       <span class="state" data-k="state"></span><button class="link" data-a="clear" type="button">Remove</button></div>
-    <label class="f">Models (one per line)</label>
+    <label class="f">Models</label>
     <textarea data-k="models" spellcheck="false"></textarea>
     <div class="tools"><button data-a="fetch" type="button">Fetch model list</button><button data-a="test" type="button">Save &amp; Test</button><span class="out" data-k="out"></span></div>
   </fieldset>
@@ -49,7 +55,7 @@
     <label class="f">API key</label>
     <div class="row"><input data-k="key" type="password" placeholder="sk-..." autocomplete="off" spellcheck="false">
       <span class="state" data-k="state"></span><button class="link" data-a="clear" type="button">Remove</button></div>
-    <label class="f">Models (one per line)</label>
+    <label class="f">Models</label>
     <textarea data-k="models" spellcheck="false" placeholder="use Fetch model list after entering the key"></textarea>
     <div class="tools"><button data-a="fetch" type="button">Fetch model list</button><button data-a="test" type="button">Save &amp; Test</button><span class="out" data-k="out"></span></div>
   </fieldset>
@@ -75,7 +81,7 @@
     <label class="f">Key</label>
     <div class="row"><input data-k="key" type="password" autocomplete="off" spellcheck="false">
       <span class="state" data-k="state"></span><button class="link" data-a="clear" type="button">Remove</button></div>
-    <label class="f">Models (one per line)</label>
+    <label class="f">Models</label>
     <textarea data-k="models" spellcheck="false" placeholder="connector-opus"></textarea>
     <div class="note">Uses the Claude Code login on that server: no API cost, the subscription's limits apply.</div>
     <div class="tools"><button data-a="fetch" type="button">Fetch model list</button><button data-a="test" type="button">Save &amp; Test</button><span class="out" data-k="out"></span></div>
@@ -119,6 +125,61 @@
   </div>
 
 <script>
+  // Model lists: one row per model with − to remove it and + to add a row.
+  // The element keeps a .value of newline-separated names, so the rest of the
+  // page reads and writes it like the old text box.
+  function modelList(box) {
+    const wrap = document.createElement('div');
+    wrap.className = 'models';
+    wrap.dataset.k = 'models';
+    const list = document.createElement('datalist'); // names from Fetch model list
+    list.id = `models-${Math.random().toString(36).slice(2)}`;
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'add';
+    add.textContent = '+';
+    add.title = 'Add a model';
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = box.placeholder ? `No models yet (${box.placeholder}).` : 'No models yet.';
+    const row = (name = '') => {
+      const r = document.createElement('div');
+      r.className = 'model';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.spellcheck = false;
+      input.value = name;
+      input.placeholder = 'model name';
+      input.setAttribute('list', list.id);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'del';
+      del.textContent = '\u2212';
+      del.title = 'Remove this model';
+      del.addEventListener('click', () => { r.remove(); refresh(); });
+      r.append(input, del);
+      wrap.insertBefore(r, add);
+      refresh();
+      return input;
+    };
+    const rows = () => [...wrap.querySelectorAll('.model input')];
+    const refresh = () => { empty.hidden = rows().length > 0; };
+    add.addEventListener('click', () => row().focus());
+    wrap.append(empty, add, list);
+    Object.defineProperty(wrap, 'value', {
+      get: () => rows().map((i) => i.value.trim()).filter(Boolean).join('\n'),
+      set: (v) => {
+        for (const r of wrap.querySelectorAll('.model')) r.remove();
+        for (const name of String(v || '').split('\n').map((x) => x.trim()).filter(Boolean)) row(name);
+        refresh();
+      },
+    });
+    wrap.suggest = (names) => { list.replaceChildren(...names.map((n) => new Option(n))); };
+    box.replaceWith(wrap);
+    refresh();
+  }
+  for (const box of document.querySelectorAll('textarea[data-k="models"]')) modelList(box);
+
   const P = ['claude', 'openai', 'local', 'connector'];
   const fs = (p) => document.querySelector(`fieldset[data-p="${p}"]`);
   const el = (p, k) => fs(p).querySelector(`[data-k="${k}"]`);
@@ -174,6 +235,7 @@
       out(p, 'Fetching…');
       const res = await window.aiSettings.models(form(), p);
       if (!res.ok) return out(p, res.error, 'err');
+      if (el(p, 'models').suggest) el(p, 'models').suggest(res.models);
       const have = new Set(el(p, 'models').value.split('\n').map((s) => s.trim()).filter(Boolean));
       const add = res.models.filter((m) => !have.has(m));
       if (!have.size && res.models.length) el(p, 'models').value = p === 'local' ? (res.models.find((m) => !/embed|bge|nomic|minilm/i.test(m)) || res.models[0]) : res.models.join('\n');

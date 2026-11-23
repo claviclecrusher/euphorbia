@@ -81,6 +81,8 @@ function init() {
 
   autoUpdater.on('update-not-available', () => {
     if (!manualCheck) return;
+    installWhenReady = false;
+    progress(-1);
     manualCheck = false;
     show({ type: 'info', message: `You are up to date. (v${app.getVersion()})` });
   });
@@ -125,6 +127,12 @@ function check(manual) {
   }
   // Already downloaded in the background: install it right away.
   if (manual && downloaded && canSelfUpdate()) return installNow();
+  // A download the startup check already started may finish without a new
+  // update-available event: whatever finishes next is installed without asking.
+  if (manual && canSelfUpdate()) {
+    installWhenReady = true;
+    progress(2);
+  }
   manualCheck = manual;
   autoUpdater.checkForUpdates().catch(() => {
     /* reported through the error event */
