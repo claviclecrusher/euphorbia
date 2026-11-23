@@ -68,7 +68,7 @@ function costOf(model, u) {
 
 // provider: claude | openai | local. usage: { input, output, cacheRead, cacheWrite }.
 function record(provider, model, usage) {
-  if (provider === 'local' || !usage) return;
+  if (provider === 'local' || provider === 'connector' || !usage) return;
   const d = load();
   const month = (d.months[monthKey()] ||= {});
   const key = `${provider}:${model}`;

@@ -14,8 +14,8 @@ const PROJECT_ID = /^[0-9a-f]{24}$/;
 // Runs in server pages. Adds "Make a copy to other server" to the More menu
 // that the project list shows while one project is ticked.
 const PAGE_SCRIPT = `(() => {
-  if (window.__overleafDesktopCopy || !window.overleafDesktop) return;
-  window.__overleafDesktopCopy = true;
+  if (window.__euphorbiaCopy || !window.euphorbia) return;
+  window.__euphorbiaCopy = true;
   const LABEL = 'Make a copy to other server';
 
   function selected() {
@@ -27,7 +27,7 @@ const PAGE_SCRIPT = `(() => {
   }
 
   function add(menu) {
-    if (menu.querySelector('[data-overleaf-desktop-copy]')) return;
+    if (menu.querySelector('[data-euphorbia-copy]')) return;
     const sample = menu.querySelector('.dropdown-item');
     const button = document.createElement('button');
     button.type = 'button';
@@ -38,7 +38,7 @@ const PAGE_SCRIPT = `(() => {
     button.addEventListener('click', () => {
       const project = selected();
       document.body.click(); // closes the dropdown
-      if (project) window.overleafDesktop.copyProject(project);
+      if (project) window.euphorbia.copyProject(project);
     });
     let node = button;
     if (!sample || (sample.parentElement && sample.parentElement.tagName === 'LI')) {
@@ -46,7 +46,7 @@ const PAGE_SCRIPT = `(() => {
       node.setAttribute('role', 'none');
       node.appendChild(button);
     }
-    node.setAttribute('data-overleaf-desktop-copy', '');
+    node.setAttribute('data-euphorbia-copy', '');
     menu.appendChild(node);
   }
 

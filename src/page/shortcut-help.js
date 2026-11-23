@@ -1,8 +1,8 @@
 // Runs in the Overleaf page. Appends an "Euphorbia Native Shortcuts"
 // section to Help → Keyboard shortcuts, below Overleaf's own shortcuts.
 (() => {
-  if (window.__overleafDesktopShortcutHelp) return;
-  window.__overleafDesktopShortcutHelp = true;
+  if (window.__euphorbiaShortcutHelp) return;
+  window.__euphorbiaShortcutHelp = true;
 
   const ctrl = /Mac/.test(navigator.platform) ? 'Cmd' : 'Ctrl';
   const KEYS = [

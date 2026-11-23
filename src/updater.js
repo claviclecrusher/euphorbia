@@ -3,7 +3,7 @@
 const { app, dialog, shell, BrowserWindow } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
-const RELEASES_URL = 'https://github.com/claviclecrusher/overleaf-desktop/releases/latest';
+const RELEASES_URL = 'https://github.com/claviclecrusher/euphorbia/releases/latest';
 
 // Installed NSIS builds and AppImages can replace themselves. Portable exes and
 // .deb installs cannot, so they only get a notification with a download link.
@@ -43,8 +43,8 @@ function init() {
   if (!app.isPackaged) return;
 
   // Test hook: point the updater at a plain HTTP directory instead of GitHub.
-  if (process.env.OVERLEAF_DESKTOP_UPDATE_URL) {
-    autoUpdater.setFeedURL({ provider: 'generic', url: process.env.OVERLEAF_DESKTOP_UPDATE_URL });
+  if (process.env.EUPHORBIA_UPDATE_URL) {
+    autoUpdater.setFeedURL({ provider: 'generic', url: process.env.EUPHORBIA_UPDATE_URL });
   }
 
   autoUpdater.autoDownload = canSelfUpdate();

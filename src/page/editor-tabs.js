@@ -14,8 +14,8 @@
 // folders unmount their children, so each tab remembers the folders above its
 // document and expands them first when needed.
 (() => {
-  if (window.__overleafDesktopTabs) return;
-  window.__overleafDesktopTabs = true;
+  if (window.__euphorbiaTabs) return;
+  window.__euphorbiaTabs = true;
 
   const PANE = window.__olDesktopPane || 0; // 1 main page, 2 bottom pane, 0 other windows
   if (!PANE) return;
@@ -25,7 +25,7 @@
   const m = location.pathname.match(/^\/project\/([0-9a-f]{24})\/?$/);
   if (!m) return;
   const projectId = m[1];
-  const bridge = window.overleafDesktop && window.overleafDesktop.split;
+  const bridge = window.euphorbia && window.euphorbia.split;
   const KEY = (pane) => `ol-desktop-tabs:${projectId}${pane === 2 ? ':2' : ''}`;
   const RATIO_KEY = `ol-desktop-split-ratio:${projectId}`;
   const DRAG_TYPE = 'application/x-ol-desktop-tab';

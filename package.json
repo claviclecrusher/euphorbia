@@ -1,9 +1,9 @@
 {
   "name": "euphorbia",
   "productName": "Euphorbia",
-  "version": "0.21.1",
+  "version": "0.22.2",
   "description": "Euphorbia: an unofficial desktop client for Overleaf servers (self-hosted Community Edition or overleaf.com)",
-  "homepage": "https://github.com/claviclecrusher/overleaf-desktop",
+  "homepage": "https://github.com/claviclecrusher/euphorbia",
   "main": "src/main.js",
   "license": "AGPL-3.0-only",
   "author": "Euphorbia contributors",
@@ -50,7 +50,7 @@
       {
         "provider": "github",
         "owner": "claviclecrusher",
-        "repo": "overleaf-desktop"
+        "repo": "euphorbia"
       }
     ],
     "appImage": {

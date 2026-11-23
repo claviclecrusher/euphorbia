@@ -1,4 +1,4 @@
-# Euphorbia icon: thin curved leaves rising from the crown, everything clipped to a
+# Generator of the earlier outlined round icon (kept for reference; build/icon-small.svg is now drawn by hand).
 # circle centred on the leaf base. Usage: python3 -I scripts/make-icon.py build/icon-small.svg
 # (the round icon used at small sizes; then run scripts/render-icons.sh)
 import math, sys

@@ -9,7 +9,7 @@ const SPLIT_OUT = new Set(['split:move', 'split:taken', 'split:ready', 'split:em
   'split:restore', 'split:rect', 'split:dragging', 'split:compile']);
 const SPLIT_IN = new Set(['split:state', 'split:receive', 'split:remove', 'split:give-all']);
 
-contextBridge.exposeInMainWorld('overleafDesktop', {
+contextBridge.exposeInMainWorld('euphorbia', {
   copyProject: (project) => ipcRenderer.invoke('project:copy', project),
   ai: {
     edit: (request) => ipcRenderer.invoke('ai:edit', request),
