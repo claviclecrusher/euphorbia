@@ -117,7 +117,8 @@ function validTab(tab) {
 }
 
 function cleanTab(tab) {
-  return { id: String(tab.id), name: tab.name.slice(0, 200), folders: tab.folders.map(String) };
+  const path = typeof tab.path === 'string' ? tab.path.slice(0, 500) : tab.name.slice(0, 200);
+  return { id: String(tab.id), name: tab.name.slice(0, 200), folders: tab.folders.map(String), path };
 }
 
 function init(context) {
