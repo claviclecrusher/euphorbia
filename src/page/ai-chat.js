@@ -271,7 +271,7 @@
   history.title = 'Conversations';
   const newChat = el('button', 'ol-chat-icon', '+');
   newChat.title = 'New chat';
-  header.append(toggle, title, model, reindex, history, newChat);
+  header.append(toggle, title, reindex, history, newChat);
   const indexBar = el('div', 'ol-chat-index');
   const list = el('div', 'ol-chat-list');
   const status = el('div', 'ol-chat-status');
@@ -305,7 +305,8 @@
   });
   showMode();
   const actions = el('div', 'ol-chat-actions');
-  actions.append(modeBtn, send);
+  // Model menu on the left of the Mode / Send row.
+  actions.append(model, modeBtn, send);
   composer.append(refsRow, input, actions);
   panel.append(handle, header, indexBar, list, status, composer);
   for (const b of panel.querySelectorAll('button')) b.type = 'button';
@@ -353,7 +354,18 @@
       return false;
     }
     model.hidden = false;
-    for (const c of info.choices) model.add(new Option(c.label, c.id, false, c.id === info.selected));
+    // Model name only (the row is narrow); the provider is in the tooltip.
+    for (const c of info.choices) {
+      const o = new Option(c.model, c.id, false, c.id === info.selected);
+      o.title = c.label;
+      model.add(o);
+    }
+    const showTitle = () => {
+      const c = info.choices.find((x) => x.id === model.value);
+      model.title = c ? `Model: ${c.label}` : 'Model';
+    };
+    showTitle();
+    model.onchange = showTitle;
     return true;
   }
   model.addEventListener('change', () => ai.select('chat', model.value));
@@ -974,9 +986,12 @@
     .ol-chat-input { width: 100%; box-sizing: border-box; resize: none; font: inherit; color: #1b222c; background: #fff;
       border: 1px solid transparent; border-radius: 6px; padding: 5px 7px; }
     .ol-chat-input:focus { outline: none; border-color: #098842; }
-    .ol-chat-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+    .ol-chat-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; min-width: 0; }
+    .ol-chat-actions .ol-chat-model { flex: 1 1 56px; min-width: 56px; max-width: 100%; height: 22px; }
+    .ol-chat-actions .ol-chat-send { padding: 3px 10px; }
+    .ol-chat-title { margin-right: auto; }
     .ol-chat-mode { font: inherit; font-size: 11px; color: inherit; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2);
-      border-radius: 14px; padding: 2px 0; cursor: pointer; white-space: nowrap; width: 84px; flex: 0 0 84px; text-align: center; overflow: hidden; }
+      border-radius: 14px; padding: 2px 0; cursor: pointer; white-space: nowrap; width: 66px; flex: 0 0 66px; text-align: center; overflow: hidden; }
     .ol-chat-mode[data-mode="read"] { background: rgba(15,111,197,.35); border-color: rgba(15,111,197,.7); }
     .ol-chat-mode[data-mode="search"] { background: rgba(255,193,7,.3); border-color: rgba(255,193,7,.8); }
     .ol-chat-hits { margin-top: 4px; display: flex; flex-direction: column; gap: 3px; }

@@ -192,7 +192,8 @@ there. When you ask for a change, the model's edits become AI suggestions in the
 files (no file is switched or changed until you accept); an edit that can't be
 placed is listed with the reason and a **Try again** button.
 
-The **mode** button next to Send cycles through three modes, and each message
+The row under the message box holds the **model** menu (left; hover for the
+provider), the **mode** button and Send. The mode button cycles through three modes, and each message
 carries its mode to the model:
 
 - **Edit**: the AI may change the files, as edits to accept or reject.
