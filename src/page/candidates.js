@@ -286,16 +286,22 @@
 
   // Ctrl+Shift+K: start an edit of the selected lines. The old text is kept
   // above, and the cursor goes to the copy below, which is what gets edited.
-  function createEdit(view) {
-    if (!editable(view)) return false;
-    const { state } = view;
+  // The selected lines, extended to whole lines: { first, last } or null.
+  function selectedLines(state) {
     const sel = state.selection.main;
-    if (editAt(state, sel.head) || blockAt(state, sel.head)) return true;
     const first = state.doc.lineAt(sel.from);
     let last = state.doc.lineAt(sel.to);
     if (sel.to > sel.from && sel.to === last.from && last.number > first.number) {
       last = state.doc.line(last.number - 1);
     }
+    return { first, last, head: sel.head };
+  }
+
+  function createEdit(view) {
+    if (!editable(view)) return false;
+    const { state } = view;
+    const { first, last, head: cursor } = selectedLines(state);
+    if (editAt(state, cursor) || blockAt(state, cursor)) return true;
     if (overlapsAny(state.doc, first.from, last.to)) return true;
     const body = state.doc.sliceString(first.from, last.to);
     const old = body.split('\n').map((l) => (l.length ? `%- ${l}` : '%-')).join('\n');
@@ -316,6 +322,164 @@
     view.dispatch({
       changes: { from: block.from, to: block.to, insert: lines.join('\n') },
       selection: { anchor: block.from },
+      userEvent: 'input.candidates',
+    });
+    view.focus();
+  }
+
+  // ---------------------------------------------------------- AI edits ---
+  //
+  // Ctrl+K: ask for an instruction, send the selected lines to the AI model
+  // configured in the app (File > AI Settings), and put the answer into an
+  // edit block, so it can be accepted or rejected like any other edit.
+
+  const aiBridge = () => window.overleafDesktop && window.overleafDesktop.ai;
+  let aiPrompt = null; // the open prompt box, if any
+
+  function aiEdit(view) {
+    if (!editable(view) || !aiBridge()) return false;
+    const { state } = view;
+    const { first, last, head } = selectedLines(state);
+    if (editAt(state, head) || blockAt(state, head) || overlapsAny(state.doc, first.from, last.to)) return true;
+    const original = state.doc.sliceString(first.from, last.to);
+    if (!original.trim()) return true;
+    openAiPrompt(view, first, last, original);
+    return true;
+  }
+
+  function openAiPrompt(view, first, last, original) {
+    closeAiPrompt();
+    const box = document.createElement('div');
+    box.className = 'ol-ai-prompt';
+    const row = document.createElement('div');
+    row.className = 'ol-ai-row';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Describe the change (Enter to run, Esc to cancel)';
+    input.spellcheck = false;
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.textContent = 'Edit';
+    row.append(input, go);
+    const status = document.createElement('div');
+    status.className = 'ol-ai-status';
+    box.append(row, status);
+
+    const coords = view.coordsAtPos(first.from) || view.coordsAtPos(view.viewport.from);
+    const content = view.contentDOM.getBoundingClientRect();
+    box.style.left = `${Math.max(8, content.left + 8)}px`;
+    box.style.width = `${Math.max(280, Math.min(640, content.width - 24))}px`;
+    box.style.top = `${Math.max(8, (coords ? coords.top : content.top) - 64)}px`;
+    document.body.appendChild(box);
+
+    aiBridge().info().then((info) => {
+      if (info && !status.textContent) status.textContent = `${info.label} \u00b7 ${last.number - first.number + 1} line(s)`;
+    });
+
+    let busy = false;
+    const run = async () => {
+      const instruction = input.value.trim();
+      if (!instruction || busy) return;
+      busy = true;
+      input.disabled = true;
+      go.disabled = true;
+      status.textContent = 'Thinking\u2026';
+      const doc = view.state.doc;
+      const res = await aiBridge().edit({
+        instruction,
+        selection: original,
+        before: doc.sliceString(doc.line(Math.max(1, first.number - 20)).from, first.from),
+        after: doc.sliceString(last.to, doc.line(Math.min(doc.lines, last.number + 20)).to),
+        fileName: currentFileName(),
+      });
+      if (aiPrompt !== box) return; // cancelled meanwhile
+      if (!res || !res.ok) {
+        busy = false;
+        input.disabled = false;
+        go.disabled = false;
+        status.textContent = (res && res.error) || 'Failed.';
+        status.classList.add('ol-ai-error');
+        if (/AI Settings/.test(status.textContent)) addSettingsLink(status);
+        input.focus();
+        return;
+      }
+      closeAiPrompt();
+      applyAiResult(view, first.from, original, res.text, res.by);
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') run();
+      else if (e.key === 'Escape') closeAiPrompt(true);
+    });
+    go.addEventListener('click', run);
+    box.addEventListener('mousedown', (e) => e.stopPropagation());
+    aiPrompt = box;
+    aiPrompt.__view = view;
+    input.focus();
+  }
+
+  function addSettingsLink(status) {
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'ol-ai-link';
+    link.textContent = 'Open AI Settings';
+    link.addEventListener('click', () => aiBridge().openSettings());
+    status.appendChild(document.createTextNode(' '));
+    status.appendChild(link);
+  }
+
+  function closeAiPrompt(refocus) {
+    if (!aiPrompt) return;
+    const view = aiPrompt.__view;
+    aiPrompt.remove();
+    aiPrompt = null;
+    if (aiBridge()) aiBridge().cancel();
+    if (refocus && view) view.focus();
+  }
+  window.addEventListener('mousedown', () => closeAiPrompt(false));
+  const aiStyle = document.createElement('style');
+  aiStyle.textContent = `
+    .ol-ai-prompt { position: fixed; z-index: 2147483500; background: #fff; color: #1b222c; border-radius: 8px;
+      box-shadow: 0 6px 24px rgba(0,0,0,.28); padding: 8px; font: 13px system-ui, "Segoe UI", sans-serif; }
+    .ol-ai-row { display: flex; gap: 6px; }
+    .ol-ai-row input { flex: 1; padding: 6px 8px; font: inherit; border: 1px solid #afb5c0; border-radius: 6px; outline: none; }
+    .ol-ai-row input:focus { border-color: #098842; box-shadow: 0 0 0 1px #098842; }
+    .ol-ai-row button { font: inherit; border: 0; border-radius: 16px; padding: 4px 14px; background: #098842; color: #fff; cursor: pointer; }
+    .ol-ai-row button:disabled, .ol-ai-row input:disabled { opacity: .6; }
+    .ol-ai-status { font-size: 11px; color: #6b7280; margin-top: 5px; min-height: 14px; }
+    .ol-ai-status.ol-ai-error { color: #b83a33; }
+    .ol-ai-link { font: inherit; border: 0; background: none; color: #0f6fc5; padding: 0; cursor: pointer; text-decoration: underline; }
+  `;
+  const addAiStyle = () => { if (document.head && !aiStyle.isConnected) document.head.appendChild(aiStyle); };
+  if (document.head) addAiStyle(); else document.addEventListener('DOMContentLoaded', addAiStyle);
+
+  function currentFileName() {
+    try {
+      return window.overleaf.unstable.store.get('editor.open_doc_name') || '';
+    } catch {
+      return '';
+    }
+  }
+
+  // The answer becomes an edit block. The lines may have moved while the
+  // model was working: find the original text again before replacing it.
+  function applyAiResult(view, from, original, text, by) {
+    const doc = view.state.doc;
+    let at = doc.sliceString(from, from + original.length) === original ? from : -1;
+    if (at < 0) {
+      const all = doc.toString();
+      const i = all.indexOf(original);
+      if (i >= 0 && all.indexOf(original, i + 1) < 0) at = i;
+    }
+    if (at < 0 || overlapsAny(doc, at, at + original.length)) {
+      window.alert('The selected lines changed while the AI was working, so its answer was not inserted.');
+      return;
+    }
+    const old = original.split('\n').map((l) => (l.length ? `%- ${l}` : '%-')).join('\n');
+    const head = `%%edit:begin by="${clean(by).slice(0, 80)}" at="${now()}"\n${old}\n%%edit:new\n`;
+    view.dispatch({
+      changes: { from: at, to: at + original.length, insert: `${head}${text}\n%%edit:end` },
+      selection: { anchor: at + head.length },
       userEvent: 'input.candidates',
     });
     view.focus();
@@ -699,6 +863,7 @@
         keymap.of([
           { key: 'Mod-Shift-i', run: createOrAdd, preventDefault: true },
           { key: 'Mod-Shift-k', run: createEdit, preventDefault: true },
+          { key: 'Mod-k', run: aiEdit, preventDefault: true },
         ])
       ),
     ];

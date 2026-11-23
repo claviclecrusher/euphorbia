@@ -116,6 +116,25 @@ The new text is what compiles; the old text is kept in the source as comments:
     We propose a novel method.
     %%edit:end
 
+## AI edits
+
+Select some lines, press `Ctrl+K`, type what to change ("make this more concise",
+"fix the grammar", "translate to English") and press Enter. The model's rewrite
+comes back as an edit with diff: the original in red, the rewrite in green, with
+**Accept** / **Reject**, marked `AI (<model>)`.
+
+Set it up in **File → AI Settings…**: choose Claude, OpenAI, or a local model
+served through an OpenAI-compatible endpoint (Ollama `http://localhost:11434/v1`,
+LM Studio `http://localhost:1234/v1`), and enter the API key and model. **Save &
+Test** sends a one-line test request. Keys are stored on this computer, encrypted
+with the system keychain when one is available, and are only used by the app
+itself, never by the Overleaf page.
+
+The selected lines and up to 20 lines before and after them are sent to the
+chosen provider. For Claude the default model is `claude-opus-5-5`; on models
+that support it, a request the model declines is retried on a fallback model
+(server-side refusal fallbacks).
+
 Developer Tools moved from `Ctrl+Shift+I` to `F12`.
 
 ## Updates

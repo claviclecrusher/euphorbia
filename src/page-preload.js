@@ -11,6 +11,12 @@ const SPLIT_IN = new Set(['split:state', 'split:receive', 'split:remove', 'split
 
 contextBridge.exposeInMainWorld('overleafDesktop', {
   copyProject: (project) => ipcRenderer.invoke('project:copy', project),
+  ai: {
+    edit: (request) => ipcRenderer.invoke('ai:edit', request),
+    cancel: () => ipcRenderer.send('ai:cancel'),
+    info: () => ipcRenderer.invoke('ai:info'),
+    openSettings: () => ipcRenderer.send('ai:open-settings'),
+  },
   split: {
     send: (channel, payload) => {
       if (SPLIT_OUT.has(channel)) ipcRenderer.send(channel, payload);

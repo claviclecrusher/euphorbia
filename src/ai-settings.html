@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>AI Settings</title>
+<style>
+  body { font-family: system-ui, "Segoe UI", sans-serif; margin: 0; padding: 24px 28px; background: #f4f5f6; color: #1b222c; font-size: 13px; }
+  h1 { font-size: 19px; margin: 0 0 6px; }
+  p.lead { color: #495365; margin: 0 0 14px; line-height: 1.5; }
+  .providers { display: flex; gap: 8px; margin-bottom: 12px; }
+  .providers label { flex: 1; display: flex; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid #c8ccd3;
+    border-radius: 8px; background: #fff; cursor: pointer; }
+  .providers input:checked + span { font-weight: 600; }
+  fieldset { border: 1px solid #d5d9df; border-radius: 8px; background: #fff; margin: 0 0 10px; padding: 10px 14px 12px; }
+  fieldset.active { border-color: #098842; box-shadow: 0 0 0 1px #098842; }
+  legend { font-weight: 600; padding: 0 4px; }
+  label.f { display: block; font-size: 12px; color: #495365; margin: 8px 0 3px; }
+  input[type=text], input[type=password] { width: 100%; box-sizing: border-box; padding: 7px 9px; font-size: 13px;
+    border: 1px solid #afb5c0; border-radius: 6px; }
+  .keyrow { display: flex; gap: 6px; align-items: center; }
+  .keyrow input { flex: 1; }
+  .state { font-size: 11px; color: #495365; white-space: nowrap; }
+  button { padding: 8px 16px; font-size: 13px; border: 0; border-radius: 18px; cursor: pointer; }
+  button.primary { background: #098842; color: #fff; }
+  button.secondary { background: #e4e7eb; color: #1b222c; }
+  button.link { background: none; color: #0f6fc5; padding: 0 4px; font-size: 12px; }
+  button:disabled { opacity: .6; cursor: default; }
+  .actions { display: flex; gap: 8px; margin-top: 14px; }
+  .actions .spacer { flex: 1; }
+  #msg { margin-top: 10px; min-height: 18px; white-space: pre-wrap; }
+  .note { font-size: 11px; color: #6b7280; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <h1>AI Settings</h1>
+  <p class="lead">Used by <b>Ctrl+K</b> in the editor. The selected lines and up to 20 lines before and after them are
+    sent to the provider you choose. Keys are stored on this computer only.</p>
+
+  <div class="providers">
+    <label><input type="radio" name="provider" value="claude"><span>Claude</span></label>
+    <label><input type="radio" name="provider" value="openai"><span>OpenAI</span></label>
+    <label><input type="radio" name="provider" value="local"><span>Local model</span></label>
+  </div>
+
+  <fieldset id="fs-claude">
+    <legend>Claude (Anthropic)</legend>
+    <label class="f" for="claude-key">API key</label>
+    <div class="keyrow"><input id="claude-key" type="password" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+      <span class="state" id="claude-state"></span><button class="link" data-clear="claude" type="button">Remove</button></div>
+    <label class="f" for="claude-model">Model</label>
+    <input id="claude-model" type="text" spellcheck="false" placeholder="claude-opus-5-5">
+  </fieldset>
+
+  <fieldset id="fs-openai">
+    <legend>OpenAI</legend>
+    <label class="f" for="openai-key">API key</label>
+    <div class="keyrow"><input id="openai-key" type="password" placeholder="sk-..." autocomplete="off" spellcheck="false">
+      <span class="state" id="openai-state"></span><button class="link" data-clear="openai" type="button">Remove</button></div>
+    <label class="f" for="openai-model">Model</label>
+    <input id="openai-model" type="text" spellcheck="false" placeholder="model name, e.g. from platform.openai.com">
+  </fieldset>
+
+  <fieldset id="fs-local">
+    <legend>Local model (OpenAI-compatible server)</legend>
+    <label class="f" for="local-url">Server address</label>
+    <input id="local-url" type="text" spellcheck="false" placeholder="http://localhost:11434/v1">
+    <label class="f" for="local-model">Model</label>
+    <input id="local-model" type="text" spellcheck="false" placeholder="e.g. llama3.1 (Ollama) or the model loaded in LM Studio">
+    <label class="f" for="local-key">API key (only if the server needs one)</label>
+    <div class="keyrow"><input id="local-key" type="password" autocomplete="off" spellcheck="false">
+      <span class="state" id="local-state"></span><button class="link" data-clear="local" type="button">Remove</button></div>
+    <div class="note">Ollama: http://localhost:11434/v1 &middot; LM Studio: http://localhost:1234/v1</div>
+  </fieldset>
+
+  <div class="note" id="enc"></div>
+
+  <div class="actions">
+    <button class="secondary" id="test" type="button">Save &amp; Test</button>
+    <span class="spacer"></span>
+    <button class="secondary" id="cancel" type="button">Close</button>
+    <button class="primary" id="save" type="button">Save</button>
+  </div>
+  <div id="msg"></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const clear = { claude: false, openai: false, local: false };
+  const msg = (text, color) => { $('msg').style.color = color || '#495365'; $('msg').textContent = text; };
+
+  function show(s) {
+    for (const r of document.querySelectorAll('input[name=provider]')) r.checked = r.value === s.provider;
+    $('claude-model').value = s.claude.model || '';
+    $('openai-model').value = s.openai.model || '';
+    $('local-model').value = s.local.model || '';
+    $('local-url').value = s.local.baseURL || '';
+    for (const p of ['claude', 'openai', 'local']) {
+      $(p + '-key').value = '';
+      $(p + '-state').textContent = s[p].hasKey ? 'saved' : 'not set';
+      clear[p] = false;
+    }
+    $('enc').textContent = s.encrypted ? 'Keys are encrypted with the system keychain.'
+      : 'No system keychain is available: keys are stored unencrypted in the app settings file.';
+    highlight();
+  }
+
+  function highlight() {
+    const p = (document.querySelector('input[name=provider]:checked') || {}).value;
+    for (const id of ['claude', 'openai', 'local']) $('fs-' + id).classList.toggle('active', id === p);
+  }
+
+  function form() {
+    return {
+      provider: (document.querySelector('input[name=provider]:checked') || {}).value,
+      claude: { model: $('claude-model').value, key: $('claude-key').value, clearKey: clear.claude },
+      openai: { model: $('openai-model').value, key: $('openai-key').value, clearKey: clear.openai },
+      local: { model: $('local-model').value, baseURL: $('local-url').value, key: $('local-key').value, clearKey: clear.local },
+    };
+  }
+
+  document.querySelectorAll('input[name=provider]').forEach((r) => r.addEventListener('change', highlight));
+  document.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', () => {
+    const p = b.getAttribute('data-clear');
+    clear[p] = true; $(p + '-key').value = ''; $(p + '-state').textContent = 'will be removed';
+  }));
+
+  $('save').addEventListener('click', async () => {
+    const res = await window.aiSettings.save(form());
+    if (res.ok) { show(res.settings); msg('Saved.', '#098842'); } else msg(res.error, '#b83a33');
+  });
+  $('test').addEventListener('click', async () => {
+    $('test').disabled = true; msg('Saving and sending a test request…');
+    const res = await window.aiSettings.test(form());
+    $('test').disabled = false;
+    if (res.ok) { show(res.settings); msg(`Works (${res.by}).\nTest answer: ${res.sample}`, '#098842'); }
+    else msg(res.error, '#b83a33');
+  });
+  $('cancel').addEventListener('click', () => window.aiSettings.close());
+
+  window.aiSettings.get().then(show);
+</script>
+</body>
+</html>

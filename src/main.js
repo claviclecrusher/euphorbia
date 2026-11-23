@@ -6,6 +6,7 @@ const path = require('path');
 const updater = require('./updater');
 const projectCopy = require('./project-copy');
 const split = require('./split');
+const ai = require('./ai');
 
 // ---------------------------------------------------------------- config ---
 //
@@ -465,6 +466,7 @@ function buildMenu() {
           },
         },
         { type: 'separator' },
+        { label: 'AI Settings…', click: () => ai.showSettings() },
         { label: `Check for Updates… (v${app.getVersion()})`, click: () => updater.check(true) },
         { type: 'separator' },
         { label: 'Quit', role: 'quit' },
@@ -553,6 +555,13 @@ if (!app.requestSingleInstanceLock()) {
     // Refuse device permissions other than clipboard access, which the editor uses.
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
       callback(permission === 'clipboard-read' || permission === 'clipboard-sanitized-write');
+    });
+
+    ai.init({
+      getConfig: () => config,
+      saveConfig,
+      getMainWindow: () => mainWindow,
+      isServerUrl,
     });
 
     split.init({
