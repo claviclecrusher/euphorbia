@@ -354,6 +354,7 @@
     }
   };
   const repaint = () => {
+    if (typeof updateTopBar === 'function') updateTopBar();
     const v = reviewViewRef || storeView();
     if (v && countsEffect) v.dispatch({ effects: countsEffect.of(null) });
   };
@@ -545,49 +546,89 @@
     refreshReview();
   }
 
-  // Settles every item of the open file. Returns how many.
-  function settleAllIn(view, keepNew) {
-    const doc = view.state.doc;
-    const blocks = parseEdits(doc);
-    const placed = placedProposals(doc, currentReviewPath());
-    if (!editable(view)) return 0;
-    const changes = blocks.map((b) => ({ from: b.from, to: b.to, insert: (keepNew ? b.newLines : b.oldLines).join('\n') }));
-    if (keepNew) for (const pl of placed) changes.push({ from: pl.from, to: pl.to, insert: pl.updated });
-    if (changes.length) view.dispatch({ changes: changes.sort((a, b) => a.from - b.from), userEvent: 'input.candidates' });
-    if (placed.length) dropProposals(placed.map((pl) => pl.prop.id));
-    return blocks.length + placed.length;
-  }
-
-  // Accepts or rejects every item in the project, file by file.
-  async function settleAll(view, keepNew) {
-    const local = reviewItems(view.state.doc).length;
+  // Accepts or rejects every AI suggestion in the project (edit blocks made by
+  // people are left alone). Rejecting needs no editor; accepting opens each file.
+  async function settleAllSuggestions(keep) {
+    const list = loadProposals();
+    if (!list.length) return 0;
+    const files = Array.from(new Set(list.map((p) => p.file)));
+    const verb = keep ? 'Accept' : 'Reject';
+    if (!window.confirm(`${verb} all ${list.length} AI suggestion(s) in ${files.length} file(s)?${keep ? '' : ' The original text is kept.'}`)) return 0;
+    if (!keep) {
+      saveProposals([]);
+      return list.length;
+    }
     const cur = currentReviewPath();
-    const others = Array.from(otherCounts()).filter(([, n]) => n > 0);
-    const total = local + others.reduce((n, [, c]) => n + c, 0);
-    const files = (local ? 1 : 0) + others.length;
-    const verb = keepNew ? 'Accept' : 'Reject';
-    if (!window.confirm(`${verb} all ${total} change(s) in ${files} file(s)?${keepNew ? '' : ' The original text is kept.'}`)) return;
-    let done = settleAllIn(view, keepNew);
-    // Rejecting a suggestion needs no editor; edit blocks and accepting do.
-    if (!keepNew) {
-      const drop = loadProposals().filter((p) => p.file !== cur).map((p) => p.id);
-      done += drop.length;
-      dropProposals(drop);
-    }
-    const needOpen = others.filter(([p]) => keepNew || review.files.some((f) => f.path === p && f.count > 0));
-    if (needOpen.length && nav()) {
-      for (const [p] of needOpen) {
-        if (!(await nav().openPath(p))) continue;
-        const v = storeView();
-        if (v) done += settleAllIn(v, keepNew);
+    const order = files.includes(cur) ? [cur, ...files.filter((f) => f !== cur)] : files;
+    let done = 0;
+    for (const f of order) {
+      if (f !== cur && !(nav() && (await nav().openPath(f)))) continue;
+      const v = storeView();
+      if (!v || !editable(v)) continue;
+      const placed = placedProposals(v.state.doc, f);
+      if (placed.length) {
+        v.dispatch({ changes: placed.map((pl) => ({ from: pl.from, to: pl.to, insert: pl.updated })), userEvent: 'input.candidates' });
+        dropProposals(placed.map((pl) => pl.prop.id));
+        done += placed.length;
       }
-      if (cur) await nav().openPath(cur);
     }
-    review.files = review.files.map((f) => ({ ...f, count: 0 }));
-    repaint();
-    setTimeout(refreshReview, 1500);
+    if (cur && order.some((f) => f !== cur) && nav()) await nav().openPath(cur);
+    const left = loadProposals().length;
+    if (left) window.alert(`${left} suggestion(s) no longer match the text and were left; reject them or ask again.`);
     return done;
   }
+
+  // One bar above the editor while there are AI suggestions in the project.
+  const topBar = document.createElement('div');
+  topBar.className = 'ol-sugg-topbar ol-topbar';
+  topBar.hidden = true;
+  const topText = document.createElement('span');
+  topText.className = 'ol-sugg-toptext';
+  const topAccept = document.createElement('button');
+  topAccept.type = 'button';
+  topAccept.textContent = 'Accept all';
+  topAccept.addEventListener('click', () => settleAllSuggestions(true));
+  const topReject = document.createElement('button');
+  topReject.type = 'button';
+  topReject.textContent = 'Reject all';
+  topReject.addEventListener('click', () => settleAllSuggestions(false));
+  topBar.append(topText, topAccept, topReject);
+
+  function updateTopBar() {
+    const list = loadProposals();
+    topBar.hidden = !list.length;
+    if (!list.length) return;
+    const files = new Set(list.map((p) => p.file)).size;
+    topText.textContent = `${list.length} AI suggestion${list.length > 1 ? 's' : ''} in ${files} file${files > 1 ? 's' : ''} (only you see them until accepted)`;
+  }
+
+  function attachTopBar() {
+    const editor = document.querySelector('.cm-editor');
+    const holder = editor && editor.parentElement;
+    const host = holder && holder.parentElement;
+    if (!host) return;
+    let n = topBar.parentElement === host ? topBar.nextElementSibling : null;
+    while (n && n !== holder && n.classList.contains('ol-topbar')) n = n.nextElementSibling;
+    if (n !== holder) host.insertBefore(topBar, holder);
+    if (!topStyle.isConnected && document.head) document.head.appendChild(topStyle);
+  }
+  const topStyle = document.createElement('style');
+  topStyle.textContent = `
+    .ol-sugg-topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 3px 10px;
+      background: #ede5fb; color: #1b222c; border-bottom: 2px solid #8b5cf6; font: 12px system-ui, "Segoe UI", sans-serif; }
+    .ol-sugg-topbar[hidden] { display: none; }
+    .ol-sugg-toptext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ol-sugg-topbar button { font: inherit; border: 0; border-radius: 12px; padding: 1px 10px; cursor: pointer; color: #fff; white-space: nowrap; }
+    .ol-sugg-topbar button:first-of-type { background: #098842; }
+    .ol-sugg-topbar button:last-of-type { background: #b83a33; }
+  `;
+  const startTopBar = () => {
+    new MutationObserver(attachTopBar).observe(document.documentElement, { childList: true, subtree: true });
+    attachTopBar();
+    updateTopBar();
+  };
+  if (document.documentElement) startTopBar();
+  else document.addEventListener('DOMContentLoaded', startTopBar);
 
   // ---------------------------------------------------------- AI edits ---
   //
@@ -1032,22 +1073,6 @@
         navBox.append(prev, count, next);
         bar.appendChild(navBox);
 
-        if (this.place.total > 1) {
-          const all = document.createElement('span');
-          all.className = 'ol-edit-all';
-          const acceptAll = document.createElement('button');
-          acceptAll.type = 'button';
-          acceptAll.textContent = 'Accept all';
-          acceptAll.title = 'Accept every edit in the project';
-          acceptAll.addEventListener('click', () => settleAll(view, true));
-          const rejectAll = document.createElement('button');
-          rejectAll.type = 'button';
-          rejectAll.textContent = 'Reject all';
-          rejectAll.title = 'Reject every edit in the project';
-          rejectAll.addEventListener('click', () => settleAll(view, false));
-          all.append(acceptAll, rejectAll);
-          bar.appendChild(all);
-        }
         bar.addEventListener('mousedown', (e) => e.preventDefault());
         box.appendChild(bar);
 
@@ -1109,10 +1134,6 @@
         box.className = 'ol-sugg';
         const bar = document.createElement('div');
         bar.className = 'ol-edit-bar ol-sugg-bar';
-        const label = document.createElement('span');
-        label.className = 'ol-edit-label';
-        label.textContent = '\u2728 AI suggestion (only you)';
-        bar.appendChild(label);
         const meta = document.createElement('span');
         meta.className = 'ol-edit-meta';
         meta.textContent = stamp(this.by, this.at);
@@ -1139,15 +1160,6 @@
         next.disabled = this.place.pos >= this.place.total;
         navBox.append(prev, count, next);
         bar.appendChild(navBox);
-        if (this.place.total > 1) {
-          const all = document.createElement('span');
-          all.className = 'ol-edit-all';
-          all.append(
-            mk('Accept all', '', 'Accept every change in the project', () => settleAll(view, true)),
-            mk('Reject all', '', 'Reject every change in the project', () => settleAll(view, false))
-          );
-          bar.appendChild(all);
-        }
         bar.addEventListener('mousedown', (e) => e.preventDefault());
         box.appendChild(bar);
         for (const text of this.lines) {

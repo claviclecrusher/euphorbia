@@ -110,8 +110,8 @@ who started the edit and when.
 
 Every edit block also shows its place among all edits in the project (`‹ 3/7 ›`);
 the arrows move to the previous or next edit, opening other files as needed.
-**Accept all** / **Reject all** settle every edit in the project after a
-confirmation. Edits in files other than the open one are counted from the app's
+Edit blocks are accepted or rejected one by one (Accept all / Reject all are for AI
+suggestions only, see below). Edits in files other than the open one are counted from the app's
 copy of the project, so a new edit in another file can take a little while to be
 counted.
 
@@ -132,10 +132,12 @@ blocks. They are kept only in this app on this computer (per project); the file
 on the server keeps the original text, so collaborators and the PDF see the
 original until you press **Accept**, which writes the suggestion into the file.
 **Reject** discards it. In the editor the original lines are marked purple and the
-suggested text appears below them in a blue box headed *AI suggestion (only you)*.
+suggested text appears below them in a blue box, headed by the model and the time.
 
-Suggestions count together with edit blocks in `‹ n/N ›` and in Accept all /
-Reject all. A suggestion cannot be edited before it is accepted (accept it, then
+While there are AI suggestions in the project, one purple bar above the editor
+shows how many there are, with **Accept all** / **Reject all**. These apply only to
+AI suggestions; edit blocks made by people are left alone. Suggestions count
+together with edit blocks in each item's `‹ n/N ›`. A suggestion cannot be edited before it is accepted (accept it, then
 edit, or ask the AI again). If the original text changes before you accept (for
 example a collaborator rewrites it), the suggestion no longer matches and is not
 shown; Accept refuses it.

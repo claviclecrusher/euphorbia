@@ -745,7 +745,7 @@
   // is open, with a yellow bar above the editor while the state is on.
 
   let searched = null; // { hits, at }
-  const bar = el('div', 'ol-searched-bar');
+  const bar = el('div', 'ol-searched-bar ol-topbar');
   bar.hidden = true;
   const barText = el('span', 'ol-searched-text');
   const barPrev = el('button', '', '\u2039');
@@ -821,7 +821,10 @@
     const holder = editor && editor.parentElement;
     const host = holder && holder.parentElement;
     if (!host) return;
-    if (bar.parentElement === host && bar.nextElementSibling === holder) return;
+    // Bars above the editor (class ol-topbar) form one run right before it.
+    let n = bar.parentElement === host ? bar.nextElementSibling : null;
+    while (n && n !== holder && n.classList.contains('ol-topbar')) n = n.nextElementSibling;
+    if (n === holder) return;
     host.insertBefore(bar, holder);
     if (getComputedStyle(host).display !== 'flex') {
       host.style.display = 'flex';
