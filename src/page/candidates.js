@@ -327,6 +327,116 @@
     view.focus();
   }
 
+  // ------------------------------------------------------- edit review ---
+  //
+  // Every edit block shows its place among all edit blocks of the project
+  // (\u2039 n/N \u203a) and can accept or reject all of them. Blocks in this file
+  // are counted live; other files come from the app's copy of the project
+  // (window.overleafDesktop.ai.listEdits). Moving to another file goes through
+  // the chat panel's file opener (window.__olDesktopNav).
+
+  const reviewProject = (location.pathname.match(/^\/project\/([0-9a-f]{24})/) || [])[1] || null;
+  const review = { files: [], path: '' }; // files: [{ path, count }] from the app copy
+  let reviewViewRef = null;
+  let countsEffect = null; // StateEffect, set once CodeMirror is known
+
+  const nav = () => window.__olDesktopNav || null;
+  const currentReviewPath = () => (nav() ? nav().currentPath() : '');
+  const storeView = () => {
+    try {
+      return window.overleaf.unstable.store.get('editor.view');
+    } catch {
+      return null;
+    }
+  };
+
+  // Position of block k of this file among all blocks in the project.
+  function reviewPlace(local, k) {
+    const cur = currentReviewPath();
+    let before = 0;
+    let after = 0;
+    for (const f of review.files) {
+      if (f.path === cur) continue;
+      if (f.path < cur) before += f.count;
+      else after += f.count;
+    }
+    return { pos: before + k + 1, total: before + local + after, before, after };
+  }
+
+  async function refreshReview() {
+    const ai = window.overleafDesktop && window.overleafDesktop.ai;
+    if (!ai || !ai.listEdits || !reviewProject) return;
+    try {
+      const res = await ai.listEdits(reviewProject);
+      if (!res || !res.ok) return;
+      review.files = res.files;
+    } catch {
+      return;
+    }
+    const v = reviewViewRef || storeView();
+    if (v && countsEffect) v.dispatch({ effects: countsEffect.of(null) });
+  }
+  setInterval(refreshReview, 15000);
+  setTimeout(refreshReview, 3000);
+
+  function revealBlock(view, block) {
+    const anchor = view.state.doc.line(Math.min(block.newLine + 1, view.state.doc.lines)).from;
+    view.dispatch({ selection: { anchor }, scrollIntoView: true });
+    view.focus();
+  }
+
+  // Moves `delta` (+1/-1) from block k of this file, into other files when needed.
+  async function moveReview(view, k, delta) {
+    const local = parseEdits(view.state.doc);
+    const target = k + delta;
+    if (target >= 0 && target < local.length) return revealBlock(view, local[target]);
+    if (!nav()) return;
+    const cur = currentReviewPath();
+    const others = review.files.filter((f) => f.count > 0 && f.path !== cur).map((f) => f.path).sort();
+    const pathTo = delta > 0 ? others.find((p) => p > cur) || others[0] : others.slice().reverse().find((p) => p < cur) || others[others.length - 1];
+    if (!pathTo) return;
+    if (!(await nav().openPath(pathTo))) return;
+    const v = storeView();
+    const blocks = v ? parseEdits(v.state.doc) : [];
+    if (blocks.length) revealBlock(v, delta > 0 ? blocks[0] : blocks[blocks.length - 1]);
+    refreshReview();
+  }
+
+  function settleAllIn(view, keepNew) {
+    const blocks = parseEdits(view.state.doc);
+    if (!blocks.length || !editable(view)) return 0;
+    view.dispatch({
+      changes: blocks.map((b) => ({ from: b.from, to: b.to, insert: (keepNew ? b.newLines : b.oldLines).join('\n') })),
+      userEvent: 'input.candidates',
+    });
+    return blocks.length;
+  }
+
+  // Accepts or rejects every edit block in the project, file by file.
+  async function settleAll(view, keepNew) {
+    const local = parseEdits(view.state.doc).length;
+    const cur = currentReviewPath();
+    const others = review.files.filter((f) => f.count > 0 && f.path !== cur);
+    const total = local + others.reduce((n, f) => n + f.count, 0);
+    const files = (local ? 1 : 0) + others.length;
+    const verb = keepNew ? 'Accept' : 'Reject';
+    if (!window.confirm(`${verb} all ${total} edit(s) in ${files} file(s)?${keepNew ? '' : ' The original text is kept.'}`)) return;
+    let done = settleAllIn(view, keepNew);
+    if (others.length && nav()) {
+      for (const f of others) {
+        if (!(await nav().openPath(f.path))) continue;
+        const v = storeView();
+        if (v) done += settleAllIn(v, keepNew);
+      }
+      if (cur) await nav().openPath(cur);
+    }
+    review.files = review.files.map((f) => ({ ...f, count: 0 }));
+    const v = storeView();
+    if (v && countsEffect) v.dispatch({ effects: countsEffect.of(null) });
+    setTimeout(refreshReview, 1500);
+    return done;
+  }
+
   // ---------------------------------------------------------- AI edits ---
   //
   // Ctrl+K: ask for an instruction, send the selected lines to the AI model
@@ -338,6 +448,11 @@
 
   function aiEdit(view) {
     if (!editable(view) || !aiBridge()) return false;
+    // Bibliography files are read-only for the AI.
+    if (/\.bib$/i.test(currentFileName())) {
+      window.alert('AI edits are turned off for .bib files: bibliography files are read-only for the AI.');
+      return true;
+    }
     const { state } = view;
     const { first, last, head } = selectedLines(state);
     if (editAt(state, head) || blockAt(state, head) || overlapsAny(state.doc, first.from, last.to)) return true;
@@ -563,7 +678,8 @@
   });
 
   function buildExtension(CM) {
-    const { Decoration, EditorView, Prec, StateField, WidgetType, keymap } = CM;
+    const { Decoration, EditorView, Prec, StateEffect, StateField, WidgetType, keymap } = CM;
+    countsEffect = countsEffect || StateEffect.define();
 
     class BarWidget extends WidgetType {
       constructor(block) {
@@ -703,13 +819,15 @@
 
     // Header + old text, drawn as one widget so the old text cannot be edited.
     class EditHeadWidget extends WidgetType {
-      constructor(block) {
+      constructor(block, k, place) {
         super();
         this.by = block.by;
         this.at = block.at;
         this.old = block.oldLines;
         this.empty = !block.newLines.length;
-        this.key = `${this.by}|${this.at}|${this.empty}|${this.old.join('\n')}`;
+        this.k = k;
+        this.place = place;
+        this.key = `${this.by}|${this.at}|${this.empty}|${k}|${place.pos}/${place.total}|${this.old.join('\n')}`;
       }
 
       eq(other) {
@@ -745,6 +863,43 @@
         reject.title = 'Keep the old text and remove the new';
         reject.addEventListener('click', () => settleEdit(view, pos(), false));
         bar.appendChild(reject);
+
+        const navBox = document.createElement('span');
+        navBox.className = 'ol-edit-nav';
+        const prev = document.createElement('button');
+        prev.type = 'button';
+        prev.textContent = '\u2039';
+        prev.title = 'Previous edit';
+        prev.disabled = this.place.pos <= 1;
+        prev.addEventListener('click', () => moveReview(view, this.k, -1));
+        const count = document.createElement('span');
+        count.textContent = `${this.place.pos}/${this.place.total}`;
+        count.title = 'This edit / all edits in the project';
+        const next = document.createElement('button');
+        next.type = 'button';
+        next.textContent = '\u203a';
+        next.title = 'Next edit';
+        next.disabled = this.place.pos >= this.place.total;
+        next.addEventListener('click', () => moveReview(view, this.k, 1));
+        navBox.append(prev, count, next);
+        bar.appendChild(navBox);
+
+        if (this.place.total > 1) {
+          const all = document.createElement('span');
+          all.className = 'ol-edit-all';
+          const acceptAll = document.createElement('button');
+          acceptAll.type = 'button';
+          acceptAll.textContent = 'Accept all';
+          acceptAll.title = 'Accept every edit in the project';
+          acceptAll.addEventListener('click', () => settleAll(view, true));
+          const rejectAll = document.createElement('button');
+          rejectAll.type = 'button';
+          rejectAll.textContent = 'Reject all';
+          rejectAll.title = 'Reject every edit in the project';
+          rejectAll.addEventListener('click', () => settleAll(view, false));
+          all.append(acceptAll, rejectAll);
+          bar.appendChild(all);
+        }
         bar.addEventListener('mousedown', (e) => e.preventDefault());
         box.appendChild(bar);
 
@@ -806,26 +961,33 @@
         const tailFrom = doc.line(block.bodyToLine + 1).from;
         ranges.push(Decoration.replace({ widget: new TailWidget(), block: true }).range(tailFrom, block.to));
       }
-      for (const block of parseEdits(doc)) {
-        const head = new EditHeadWidget(block);
+      const edits = parseEdits(doc);
+      edits.forEach((block, k) => {
+        const head = new EditHeadWidget(block, k, reviewPlace(edits.length, k));
         if (!block.newLines.length) {
           ranges.push(Decoration.replace({ widget: head, block: true }).range(block.from, block.to));
-          continue;
+          return;
         }
         ranges.push(Decoration.replace({ widget: head, block: true }).range(block.from, doc.line(block.newLine).to));
         for (let n = block.newLine + 1; n < block.endLine; n++) ranges.push(newLine.range(doc.line(n).from));
         ranges.push(Decoration.replace({ widget: new EditTailWidget(), block: true }).range(doc.line(block.endLine).from, block.to));
-      }
+      });
       return Decoration.set(ranges, true);
     }
 
     const field = StateField.define({
       create: (state) => build(state),
-      update: (value, tr) => (tr.docChanged ? build(tr.state) : value),
+      update: (value, tr) => (tr.docChanged || tr.effects.some((e) => e.is(countsEffect)) ? build(tr.state) : value),
       provide: (f) => [
         EditorView.decorations.from(f),
         EditorView.atomicRanges.of((view) => view.state.field(f, false) || Decoration.none),
       ],
+    });
+    // Keep a handle on the view for count refreshes.
+    const viewTracker = CM.ViewPlugin.define((view) => {
+      reviewViewRef = view;
+      setTimeout(refreshReview, 500);
+      return { destroy: () => (reviewViewRef === view ? (reviewViewRef = null) : null) };
     });
 
     const theme = EditorView.baseTheme({
@@ -906,6 +1068,11 @@
       },
       '.ol-edit-bar button.ol-edit-accept': { background: '#098842' },
       '.ol-edit-bar button.ol-edit-reject': { background: '#b83a33' },
+      '.ol-edit-nav': { display: 'inline-flex', alignItems: 'center', gap: '2px', marginLeft: '6px', fontSize: '11px', opacity: '0.85' },
+      '.ol-edit-bar .ol-edit-nav button': { background: 'transparent', color: 'inherit', padding: '0 5px', fontSize: '14px', lineHeight: '1' },
+      '.ol-edit-bar .ol-edit-nav button:disabled': { opacity: '0.3', cursor: 'default' },
+      '.ol-edit-all': { display: 'inline-flex', gap: '4px', marginLeft: '4px' },
+      '.ol-edit-bar .ol-edit-all button': { background: 'transparent', color: 'inherit', border: '1px solid rgba(128,128,128,0.5)', padding: '0 8px' },
       '.ol-edit-old': {
         padding: '0 2px 0 6px',
         whiteSpace: 'pre-wrap',
@@ -925,6 +1092,7 @@
 
     return [
       field,
+      viewTracker,
       theme,
       Prec.highest(
         keymap.of([

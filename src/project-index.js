@@ -212,8 +212,8 @@ function treeOf(p, f) {
 
 // Downloads the project and keeps the copy. Only changed files are split
 // again (trees are cached by file hash); summaries are cached by unit hash.
-async function refresh(p, { force = false } = {}) {
-  if (!force && p.files.length && Date.now() - p.builtAt < STALE_MS) return p;
+async function refresh(p, { force = false, maxAge = STALE_MS } = {}) {
+  if (!force && p.files.length && Date.now() - p.builtAt < maxAge) return p;
   if (p.refreshing) return p.refreshing;
   p.refreshing = (async () => {
     try {

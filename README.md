@@ -108,6 +108,13 @@ you edit the copy below on a green background. **Accept** keeps the new text and
 drops the old; **Reject** keeps the old text and drops the new. The block shows
 who started the edit and when.
 
+Every edit block also shows its place among all edits in the project (`‹ 3/7 ›`);
+the arrows move to the previous or next edit, opening other files as needed.
+**Accept all** / **Reject all** settle every edit in the project after a
+confirmation. Edits in files other than the open one are counted from the app's
+copy of the project, so a new edit in another file can take a little while to be
+counted.
+
 The new text is what compiles; the old text is kept in the source as comments:
 
     %%edit:begin by="Alice Kim" at="2026-11-23 14:05"
@@ -141,7 +148,18 @@ sidebar for more room) is a chat about the whole project. `Ctrl+L` adds the
 selected lines to the message as a link (`main.tex:12-18`); clicking a link jumps
 there. When you ask for a change, the model's edits are added to the files as
 edits with diff for Accept / Reject; an edit that can't be placed is listed with
-the reason and a **Try again** button. Conversations are kept per project on
+the reason and a **Try again** button.
+
+The **mode** button next to Send switches between **Write** (the AI may edit the
+files, as edits to accept or reject) and **Read-only** (it reads and answers but
+does not edit; edits it writes anyway are not applied). Each message carries its
+mode to the model.
+
+`.bib` files are always read-only for the AI: the model is told so and may read
+them, edits it writes for them are never applied, and `Ctrl+K` is turned off in
+them. You can still edit them yourself (including `Ctrl+Shift+K`).
+
+Conversations are kept per project on
 this computer: **+** starts a new one, **☰** lists the earlier ones to reopen or
 delete. Each conversation is its own context; only its messages are sent.
 
