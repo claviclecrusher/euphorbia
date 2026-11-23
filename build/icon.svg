@@ -1,65 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Euphorbia 'Sotetsukirin' (괴마옥): a thick stem covered in spiralling
-       diamond tubercles under a crown of long, narrow leaves. -->
+  <!-- Euphorbia 'Sotetsukirin' (괴마옥), one colour: a stem covered in diamond
+       tubercles under a crown of long, narrow leaves. Details are cut out. -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#f3efe2"/>
-      <stop offset="1" stop-color="#e2dcc6"/>
-    </linearGradient>
-    <linearGradient id="stem" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#4f5e3a"/>
-      <stop offset="0.45" stop-color="#8a9a5f"/>
-      <stop offset="1" stop-color="#3e4a2c"/>
-    </linearGradient>
-    <linearGradient id="leaf" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" stop-color="#2f6b3a"/>
-      <stop offset="1" stop-color="#6fb35a"/>
-    </linearGradient>
-    <linearGradient id="pot" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#a5502e"/>
-      <stop offset="0.5" stop-color="#c96a3f"/>
-      <stop offset="1" stop-color="#8e4326"/>
-    </linearGradient>
-    <!-- Tubercles: offset rows of rounded diamonds, each with a pale scar on top. -->
-    <pattern id="tub" width="84" height="60" patternUnits="userSpaceOnUse" x="12" y="0">
-      <path d="M42 0 L84 30 L42 60 L0 30 Z" fill="none" stroke="#2c361f" stroke-width="6" stroke-linejoin="round"/>
-      <path d="M42 8 C54 14 54 24 42 26 C30 24 30 14 42 8 Z" fill="#c9bf98" opacity=".8"/>
-      <path d="M0 38 C12 44 12 54 0 56 C-12 54 -12 44 0 38 Z M84 38 C96 44 96 54 84 56 C72 54 72 44 84 38 Z" fill="#c9bf98" opacity=".8"/>
+    <pattern id="tub" width="100" height="70" patternUnits="userSpaceOnUse" x="12" y="6">
+      <path d="M50 0 L100 35 L50 70 L0 35 Z" fill="none" stroke="#000" stroke-width="10" stroke-linejoin="round"/>
+      <circle cx="50" cy="19" r="6" fill="#000"/><circle cx="0" cy="54" r="6" fill="#000"/><circle cx="100" cy="54" r="6" fill="#000"/>
     </pattern>
-    <clipPath id="stemClip">
-      <path id="stemShape" d="M372 452 C366 560 362 690 376 790 L648 790 C662 690 658 560 652 452 C612 418 412 418 372 452 Z"/>
-    </clipPath>
+    <mask id="cut">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <!-- tubercle grooves on the stem -->
+      <rect x="360" y="420" width="304" height="560" fill="url(#tub)"/>
+    </mask>
   </defs>
-
-  <rect x="32" y="32" width="960" height="960" rx="200" fill="url(#bg)"/>
-
-  <!-- leaves: a fan of long lanceolate leaves -->
-  <g fill="url(#leaf)" stroke="#24502c" stroke-width="5">
-    <path d="M512 460 C470 360 360 250 236 214 C330 290 420 380 486 466 Z"/>
-    <path d="M512 460 C554 360 664 250 788 214 C694 290 604 380 538 466 Z"/>
-    <path d="M500 462 C430 400 300 352 190 356 C300 392 410 430 488 472 Z"/>
-    <path d="M524 462 C594 400 724 352 834 356 C724 392 614 430 536 472 Z"/>
-    <path d="M506 458 C478 340 430 220 360 140 C410 250 450 350 494 462 Z"/>
-    <path d="M518 458 C546 340 594 220 664 140 C614 250 574 350 530 462 Z"/>
-    <path d="M512 456 C500 330 506 200 512 110 C518 200 524 330 512 456 Z"/>
+  <g fill="#2f5d3a" mask="url(#cut)">
+    <!-- leaves: long and narrow, radiating and arching down at the sides -->
+    <path d="M498 420 C400 380 250 380 110 470 C250 400 390 410 504 404 Z"/>
+    <path d="M526 420 C624 380 774 380 914 470 C774 400 634 410 520 404 Z"/>
+    <path d="M496 410 C410 330 290 270 150 260 C300 240 430 300 516 396 Z"/>
+    <path d="M528 410 C614 330 734 270 874 260 C724 240 594 300 508 396 Z"/>
+    <path d="M500 404 C450 300 370 200 270 120 C390 160 480 270 524 392 Z"/>
+    <path d="M524 404 C574 300 654 200 754 120 C634 160 544 270 500 392 Z"/>
+    <path d="M512 400 C480 290 484 160 512 40 C540 160 544 290 512 400 Z"/>
+    <!-- stem: tall column, a little wider at the base -->
+    <path d="M410 440 C410 410 450 396 512 396 C574 396 614 410 614 440 C626 600 640 800 650 930 C650 960 620 976 512 976 C404 976 374 960 374 930 C384 800 398 600 410 440 Z"/>
   </g>
-  <!-- leaf midribs -->
-  <g fill="none" stroke="#a7d68c" stroke-width="4" stroke-linecap="round" opacity=".7">
-    <path d="M496 452 C440 380 350 290 260 228"/>
-    <path d="M528 452 C584 380 674 290 764 228"/>
-    <path d="M500 452 C470 340 430 240 370 158"/>
-    <path d="M524 452 C554 340 594 240 654 158"/>
-    <path d="M512 446 C508 330 510 220 512 126"/>
-  </g>
-
-  <!-- stem -->
-  <use href="#stemShape" fill="url(#stem)"/>
-  <rect x="340" y="400" width="340" height="420" fill="url(#tub)" clip-path="url(#stemClip)" opacity=".9"/>
-  <!-- roundness: dark edges, light centre -->
-  <rect x="340" y="400" width="340" height="420" clip-path="url(#stemClip)" fill="url(#stem)" opacity=".25"/>
-  <use href="#stemShape" fill="none" stroke="#2c361f" stroke-width="8"/>
-
-  <!-- pot -->
-  <path d="M318 770 L706 770 L676 900 C670 920 654 930 634 930 L390 930 C370 930 354 920 348 900 Z" fill="url(#pot)" stroke="#6f321b" stroke-width="7" stroke-linejoin="round"/>
-  <rect x="296" y="750" width="432" height="58" rx="18" fill="#c96a3f" stroke="#6f321b" stroke-width="7"/>
 </svg>
