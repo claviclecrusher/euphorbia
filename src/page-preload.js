@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('overleafDesktop', {
     indexApprove: (projectId, allow) => ipcRenderer.send('ai:index-approve', projectId, allow),
     chatContinue: (requestId, go) => ipcRenderer.send('ai:chat-continue', requestId, go),
     listEdits: (projectId) => ipcRenderer.invoke('ai:list-edits', projectId),
+    usage: (provider) => ipcRenderer.invoke('ai:usage', provider),
     sendRef: (ref) => ipcRenderer.send('ai:ref', ref),
     onRef: (callback) => ipcRenderer.on('ai:ref', (_e, ref) => callback(ref)),
   },

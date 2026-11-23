@@ -193,7 +193,14 @@ files (no file is switched or changed until you accept); an edit that can't be
 placed is listed with the reason and a **Try again** button.
 
 The row under the message box holds the **model** menu (left; hover for the
-provider), the **mode** button and Send. The mode button cycles through three modes, and each message
+provider), this month's **spending** for that model's provider, the **mode** button
+and Send. Spending is estimated from the token usage the APIs report for every
+request this app makes (chat, Ctrl+K, summaries, embeddings), priced per model;
+hover it for a per-model breakdown. Claude models are priced; models without a
+known price (OpenAI) show tokens instead; local models show "free". Use made by
+other apps or computers with the same key is not included (the APIs do not report
+account balances). The label is hidden when the row is too narrow to show it
+whole. The mode button cycles through three modes, and each message
 carries its mode to the model:
 
 - **Edit**: the AI may change the files, as edits to accept or reject.
