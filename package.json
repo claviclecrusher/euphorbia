@@ -1,0 +1,48 @@
+{
+  "name": "overleaf-desktop",
+  "productName": "Overleaf Desktop",
+  "version": "0.1.0",
+  "description": "Desktop client for a self-hosted Overleaf Community Edition server",
+  "main": "src/main.js",
+  "license": "MIT",
+  "author": "overleaf-desktop",
+  "scripts": {
+    "start": "electron .",
+    "dist:linux": "electron-builder --linux AppImage deb",
+    "dist:win": "electron-builder --win nsis portable",
+    "dist": "electron-builder --linux AppImage deb --win nsis portable"
+  },
+  "build": {
+    "appId": "local.overleaf.desktop",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "linux": {
+      "category": "Office",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "maintainer": "overleaf-desktop"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  }
+}
