@@ -7,6 +7,7 @@
   const ctrl = /Mac/.test(navigator.platform) ? 'Cmd' : 'Ctrl';
   const KEYS = [
     [`${ctrl} + Shift + I`, 'Candidates: turn the selected lines into a candidate block, or add a candidate inside one'],
+    [`${ctrl} + K`, 'AI edit: rewrite the selected lines from an instruction; the result is an edit with Accept / Reject (File > AI Settings)'],
     [`${ctrl} + Shift + K`, 'Edit with diff: keep the selected lines as the old version and edit a copy (Accept / Reject)'],
     [`${ctrl} + 1 … 9`, 'Switch to a saved server'],
     [`${ctrl} + Shift + H`, 'Back to the project list'],
