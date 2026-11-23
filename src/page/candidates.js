@@ -329,14 +329,18 @@
 
   // ------------------------------------------------------- edit review ---
   //
-  // Every edit block shows its place among all edit blocks of the project
-  // (\u2039 n/N \u203a) and can accept or reject all of them. Blocks in this file
-  // are counted live; other files come from the app's copy of the project
-  // (window.overleafDesktop.ai.listEdits). Moving to another file goes through
-  // the chat panel's file opener (window.__olDesktopNav).
+  // Two kinds of reviewable changes:
+  // - edit blocks (%%edit: comments in the source): made by people with
+  //   Ctrl+Shift+K; shared with collaborators.
+  // - AI suggestions: kept only on this computer (localStorage, per project)
+  //   as { file, find, replace }. The source keeps the original text; the
+  //   suggestion is drawn over it and written into the file on Accept.
+  // Every item shows its place among all items of the project (‹ n/N ›);
+  // Accept all / Reject all cover both kinds. Edit blocks in other files are
+  // counted from the app's copy of the project (window.overleafDesktop.ai.listEdits).
 
   const reviewProject = (location.pathname.match(/^\/project\/([0-9a-f]{24})/) || [])[1] || null;
-  const review = { files: [], path: '' }; // files: [{ path, count }] from the app copy
+  const review = { files: [] }; // [{ path, count }] edit blocks per file, from the app copy
   let reviewViewRef = null;
   let countsEffect = null; // StateEffect, set once CodeMirror is known
 
@@ -349,16 +353,156 @@
       return null;
     }
   };
+  const repaint = () => {
+    const v = reviewViewRef || storeView();
+    if (v && countsEffect) v.dispatch({ effects: countsEffect.of(null) });
+  };
 
-  // Position of block k of this file among all blocks in the project.
+  // ---- AI suggestions (local only)
+
+  const PKEY = `ol-desktop-ai-suggestions:${reviewProject}`;
+  function loadProposals() {
+    try {
+      const list = JSON.parse(localStorage.getItem(PKEY) || '[]');
+      return Array.isArray(list) ? list : [];
+    } catch {
+      return [];
+    }
+  }
+  function saveProposals(list) {
+    try {
+      localStorage.setItem(PKEY, JSON.stringify(list));
+    } catch {
+      /* ignore */
+    }
+    repaint();
+  }
+  // The other split pane changed them.
+  window.addEventListener('storage', (e) => {
+    if (e.key === PKEY) repaint();
+  });
+
+  // Where `find` is in a document: { at, len } or { error }. Exact and unique
+  // first, then whole lines with trailing spaces ignored.
+  function locateText(doc, find) {
+    if (!find) return { error: 'Nothing to find.' };
+    const all = doc.toString();
+    const i = all.indexOf(find);
+    if (i >= 0 && all.indexOf(find, i + 1) < 0) return { at: i, len: find.length };
+    if (i >= 0) return { error: 'The text to change appears more than once in the file.' };
+    const norm = (t) => t.replace(/[ \t]+$/gm, '');
+    const want = norm(find).split('\n');
+    const lines = all.split('\n');
+    const hits = [];
+    for (let n = 0; n + want.length <= lines.length; n++) if (want.every((w, k) => norm(lines[n + k]) === w)) hits.push(n);
+    if (hits.length === 1) {
+      const at = doc.line(hits[0] + 1).from;
+      return { at, len: doc.line(hits[0] + want.length).to - at };
+    }
+    return { error: hits.length ? 'The text to change appears more than once in the file.' : 'The original text is no longer in the file (it was changed).' };
+  }
+
+  // A suggestion placed in a document: whole-line span, original and new text.
+  function placeProposal(doc, prop) {
+    const hit = locateText(doc, prop.find);
+    if (hit.error) return { error: hit.error };
+    const first = doc.lineAt(hit.at);
+    const last = doc.lineAt(hit.at + hit.len);
+    const original = doc.sliceString(first.from, last.to);
+    const updated = doc.sliceString(first.from, hit.at) + prop.replace + doc.sliceString(hit.at + hit.len, last.to);
+    if (updated === original) return { error: 'The suggestion does not change anything.' };
+    if (overlapsAny(doc, first.from, last.to)) return { error: 'That part of the file is inside an edit or candidates block.' };
+    return { from: first.from, to: last.to, startLine: first.number, endLine: last.number, original, updated };
+  }
+
+  // Suggestions of this file that can be shown, in document order, without overlaps.
+  function placedProposals(doc, path) {
+    const out = [];
+    for (const prop of loadProposals()) {
+      if (prop.file !== path) continue;
+      const pl = placeProposal(doc, prop);
+      if (pl.error) continue;
+      if (out.some((o) => pl.from <= o.to && pl.to >= o.from)) continue;
+      out.push({ prop, ...pl });
+    }
+    return out.sort((a, b) => a.from - b.from);
+  }
+
+  // Adds a suggestion. When the file is open it is checked against the live text.
+  function addProposal({ file, find, replace, by }) {
+    const v = storeView();
+    if (v && file === currentReviewPath()) {
+      const pl = placeProposal(v.state.doc, { find, replace });
+      if (pl.error) return { ok: false, error: pl.error };
+      if (placedProposals(v.state.doc, file).some((o) => pl.from <= o.to && pl.to >= o.from)) {
+        return { ok: false, error: 'It overlaps another AI suggestion that is still waiting for review.' };
+      }
+    }
+    const id = Math.random().toString(36).slice(2, 10);
+    const list = loadProposals();
+    list.push({ id, file, find, replace, by: clean(by || 'AI').slice(0, 80), at: now() });
+    saveProposals(list);
+    return { ok: true, id };
+  }
+
+  function dropProposals(ids) {
+    const set = new Set(ids);
+    saveProposals(loadProposals().filter((p) => !set.has(p.id)));
+  }
+
+  function settleProposal(view, id, keep) {
+    const prop = loadProposals().find((p) => p.id === id);
+    if (!prop) return;
+    if (keep) {
+      const pl = placeProposal(view.state.doc, prop);
+      if (pl.error) {
+        window.alert(`This suggestion cannot be applied: ${pl.error}`);
+        return;
+      }
+      view.dispatch({ changes: { from: pl.from, to: pl.to, insert: pl.updated }, selection: { anchor: pl.from }, userEvent: 'input.candidates' });
+    }
+    dropProposals([id]);
+    view.focus();
+  }
+
+  // Scrolls to a suggestion (used by the chat panel's edit cards).
+  function revealProposal(id) {
+    const v = storeView();
+    const prop = loadProposals().find((p) => p.id === id);
+    if (!v || !prop) return false;
+    const pl = placeProposal(v.state.doc, prop);
+    if (pl.error) return false;
+    v.dispatch({ selection: { anchor: pl.from }, scrollIntoView: true });
+    v.focus();
+    return true;
+  }
+
+  // ---- both kinds together
+
+  // Reviewable items of the open file in document order.
+  function reviewItems(doc) {
+    const items = parseEdits(doc).map((b) => ({ type: 'block', from: b.from, block: b }));
+    for (const pl of placedProposals(doc, currentReviewPath())) items.push({ type: 'ai', from: pl.from, placed: pl });
+    return items.sort((a, b) => a.from - b.from);
+  }
+
+  // Items per other file: edit blocks from the app copy plus local suggestions.
+  function otherCounts() {
+    const cur = currentReviewPath();
+    const counts = new Map();
+    for (const f of review.files) if (f.path !== cur) counts.set(f.path, (counts.get(f.path) || 0) + f.count);
+    for (const p of loadProposals()) if (p.file !== cur) counts.set(p.file, (counts.get(p.file) || 0) + 1);
+    return counts;
+  }
+
+  // Position of item k of this file among all items in the project.
   function reviewPlace(local, k) {
     const cur = currentReviewPath();
     let before = 0;
     let after = 0;
-    for (const f of review.files) {
-      if (f.path === cur) continue;
-      if (f.path < cur) before += f.count;
-      else after += f.count;
+    for (const [path, count] of otherCounts()) {
+      if (path < cur) before += count;
+      else after += count;
     }
     return { pos: before + k + 1, total: before + local + after, before, after };
   }
@@ -373,66 +517,74 @@
     } catch {
       return;
     }
-    const v = reviewViewRef || storeView();
-    if (v && countsEffect) v.dispatch({ effects: countsEffect.of(null) });
+    repaint();
   }
   setInterval(refreshReview, 15000);
   setTimeout(refreshReview, 3000);
 
-  function revealBlock(view, block) {
-    const anchor = view.state.doc.line(Math.min(block.newLine + 1, view.state.doc.lines)).from;
-    view.dispatch({ selection: { anchor }, scrollIntoView: true });
+  function revealItem(view, item) {
+    const line = item.type === 'block' ? Math.min(item.block.newLine + 1, view.state.doc.lines) : view.state.doc.lineAt(item.from).number;
+    view.dispatch({ selection: { anchor: view.state.doc.line(line).from }, scrollIntoView: true });
     view.focus();
   }
 
-  // Moves `delta` (+1/-1) from block k of this file, into other files when needed.
+  // Moves `delta` (+1/-1) from item k of this file, into other files when needed.
   async function moveReview(view, k, delta) {
-    const local = parseEdits(view.state.doc);
+    const items = reviewItems(view.state.doc);
     const target = k + delta;
-    if (target >= 0 && target < local.length) return revealBlock(view, local[target]);
+    if (target >= 0 && target < items.length) return revealItem(view, items[target]);
     if (!nav()) return;
     const cur = currentReviewPath();
-    const others = review.files.filter((f) => f.count > 0 && f.path !== cur).map((f) => f.path).sort();
+    const others = Array.from(otherCounts()).filter(([, n]) => n > 0).map(([p]) => p).sort();
     const pathTo = delta > 0 ? others.find((p) => p > cur) || others[0] : others.slice().reverse().find((p) => p < cur) || others[others.length - 1];
     if (!pathTo) return;
     if (!(await nav().openPath(pathTo))) return;
     const v = storeView();
-    const blocks = v ? parseEdits(v.state.doc) : [];
-    if (blocks.length) revealBlock(v, delta > 0 ? blocks[0] : blocks[blocks.length - 1]);
+    const next = v ? reviewItems(v.state.doc) : [];
+    if (next.length) revealItem(v, delta > 0 ? next[0] : next[next.length - 1]);
     refreshReview();
   }
 
+  // Settles every item of the open file. Returns how many.
   function settleAllIn(view, keepNew) {
-    const blocks = parseEdits(view.state.doc);
-    if (!blocks.length || !editable(view)) return 0;
-    view.dispatch({
-      changes: blocks.map((b) => ({ from: b.from, to: b.to, insert: (keepNew ? b.newLines : b.oldLines).join('\n') })),
-      userEvent: 'input.candidates',
-    });
-    return blocks.length;
+    const doc = view.state.doc;
+    const blocks = parseEdits(doc);
+    const placed = placedProposals(doc, currentReviewPath());
+    if (!editable(view)) return 0;
+    const changes = blocks.map((b) => ({ from: b.from, to: b.to, insert: (keepNew ? b.newLines : b.oldLines).join('\n') }));
+    if (keepNew) for (const pl of placed) changes.push({ from: pl.from, to: pl.to, insert: pl.updated });
+    if (changes.length) view.dispatch({ changes: changes.sort((a, b) => a.from - b.from), userEvent: 'input.candidates' });
+    if (placed.length) dropProposals(placed.map((pl) => pl.prop.id));
+    return blocks.length + placed.length;
   }
 
-  // Accepts or rejects every edit block in the project, file by file.
+  // Accepts or rejects every item in the project, file by file.
   async function settleAll(view, keepNew) {
-    const local = parseEdits(view.state.doc).length;
+    const local = reviewItems(view.state.doc).length;
     const cur = currentReviewPath();
-    const others = review.files.filter((f) => f.count > 0 && f.path !== cur);
-    const total = local + others.reduce((n, f) => n + f.count, 0);
+    const others = Array.from(otherCounts()).filter(([, n]) => n > 0);
+    const total = local + others.reduce((n, [, c]) => n + c, 0);
     const files = (local ? 1 : 0) + others.length;
     const verb = keepNew ? 'Accept' : 'Reject';
-    if (!window.confirm(`${verb} all ${total} edit(s) in ${files} file(s)?${keepNew ? '' : ' The original text is kept.'}`)) return;
+    if (!window.confirm(`${verb} all ${total} change(s) in ${files} file(s)?${keepNew ? '' : ' The original text is kept.'}`)) return;
     let done = settleAllIn(view, keepNew);
-    if (others.length && nav()) {
-      for (const f of others) {
-        if (!(await nav().openPath(f.path))) continue;
+    // Rejecting a suggestion needs no editor; edit blocks and accepting do.
+    if (!keepNew) {
+      const drop = loadProposals().filter((p) => p.file !== cur).map((p) => p.id);
+      done += drop.length;
+      dropProposals(drop);
+    }
+    const needOpen = others.filter(([p]) => keepNew || review.files.some((f) => f.path === p && f.count > 0));
+    if (needOpen.length && nav()) {
+      for (const [p] of needOpen) {
+        if (!(await nav().openPath(p))) continue;
         const v = storeView();
         if (v) done += settleAllIn(v, keepNew);
       }
       if (cur) await nav().openPath(cur);
     }
     review.files = review.files.map((f) => ({ ...f, count: 0 }));
-    const v = storeView();
-    if (v && countsEffect) v.dispatch({ effects: countsEffect.of(null) });
+    repaint();
     setTimeout(refreshReview, 1500);
     return done;
   }
@@ -610,14 +762,10 @@
       window.alert('The selected lines changed while the AI was working, so its answer was not inserted.');
       return;
     }
-    const old = original.split('\n').map((l) => (l.length ? `%- ${l}` : '%-')).join('\n');
-    const head = `%%edit:begin by="${clean(by).slice(0, 80)}" at="${now()}"\n${old}\n%%edit:new\n`;
-    view.dispatch({
-      changes: { from: at, to: at + original.length, insert: `${head}${text}\n%%edit:end` },
-      selection: { anchor: at + head.length },
-      userEvent: 'input.candidates',
-    });
-    view.focus();
+    // AI suggestions stay on this computer until accepted.
+    const res = addProposal({ file: currentReviewPath() || currentFileName(), find: original, replace: text, by });
+    if (!res.ok) window.alert(`The AI suggestion was not added: ${res.error}`);
+    else revealProposal(res.id);
   }
 
   // Inserts an edit block replacing `find` with `replace` in the editor's
@@ -665,7 +813,7 @@
     });
     return { ok: true, line: first.number };
   }
-  window.__olDesktopEdits = { insertEdit };
+  window.__olDesktopEdits = { insertEdit, addProposal, revealProposal };
 
   // ------------------------------------------------------------ editor ---
 
@@ -939,6 +1087,84 @@
       }
     }
 
+    // AI suggestion: header + suggested text, below the original lines.
+    class SuggestionWidget extends WidgetType {
+      constructor(placed, k, place) {
+        super();
+        this.id = placed.prop.id;
+        this.by = placed.prop.by;
+        this.at = placed.prop.at;
+        this.lines = placed.updated.split('\n');
+        this.k = k;
+        this.place = place;
+        this.key = `${this.id}|${k}|${place.pos}/${place.total}|${placed.updated}`;
+      }
+
+      eq(other) {
+        return other.key === this.key;
+      }
+
+      toDOM(view) {
+        const box = document.createElement('div');
+        box.className = 'ol-sugg';
+        const bar = document.createElement('div');
+        bar.className = 'ol-edit-bar ol-sugg-bar';
+        const label = document.createElement('span');
+        label.className = 'ol-edit-label';
+        label.textContent = '\u2728 AI suggestion (only you)';
+        bar.appendChild(label);
+        const meta = document.createElement('span');
+        meta.className = 'ol-edit-meta';
+        meta.textContent = stamp(this.by, this.at);
+        meta.title = 'Only you see this suggestion until you accept it.';
+        bar.appendChild(meta);
+        const mk = (text, cls, title, fn) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = cls;
+          b.textContent = text;
+          b.title = title;
+          b.addEventListener('click', fn);
+          return b;
+        };
+        bar.appendChild(mk('Accept', 'ol-edit-accept', 'Write this suggestion into the file', () => settleProposal(view, this.id, true)));
+        bar.appendChild(mk('Reject', 'ol-edit-reject', 'Discard this suggestion', () => settleProposal(view, this.id, false)));
+        const navBox = document.createElement('span');
+        navBox.className = 'ol-edit-nav';
+        const prev = mk('\u2039', '', 'Previous change', () => moveReview(view, this.k, -1));
+        prev.disabled = this.place.pos <= 1;
+        const count = document.createElement('span');
+        count.textContent = `${this.place.pos}/${this.place.total}`;
+        const next = mk('\u203a', '', 'Next change', () => moveReview(view, this.k, 1));
+        next.disabled = this.place.pos >= this.place.total;
+        navBox.append(prev, count, next);
+        bar.appendChild(navBox);
+        if (this.place.total > 1) {
+          const all = document.createElement('span');
+          all.className = 'ol-edit-all';
+          all.append(
+            mk('Accept all', '', 'Accept every change in the project', () => settleAll(view, true)),
+            mk('Reject all', '', 'Reject every change in the project', () => settleAll(view, false))
+          );
+          bar.appendChild(all);
+        }
+        bar.addEventListener('mousedown', (e) => e.preventDefault());
+        box.appendChild(bar);
+        for (const text of this.lines) {
+          const line = document.createElement('div');
+          line.className = 'ol-sugg-line';
+          line.textContent = text || '\u200b';
+          box.appendChild(line);
+        }
+        return box;
+      }
+
+      ignoreEvent() {
+        return true;
+      }
+    }
+    const suggOldLine = Decoration.line({ class: 'ol-sugg-old' });
+
     const newLine = Decoration.line({ class: 'ol-edit-new' });
 
     const bodyLine = Decoration.line({ class: 'ol-cand-body' });
@@ -961,9 +1187,17 @@
         const tailFrom = doc.line(block.bodyToLine + 1).from;
         ranges.push(Decoration.replace({ widget: new TailWidget(), block: true }).range(tailFrom, block.to));
       }
-      const edits = parseEdits(doc);
-      edits.forEach((block, k) => {
-        const head = new EditHeadWidget(block, k, reviewPlace(edits.length, k));
+      const items = reviewItems(doc);
+      items.forEach((item, k) => {
+        const place = reviewPlace(items.length, k);
+        if (item.type === 'ai') {
+          const pl = item.placed;
+          for (let n = pl.startLine; n <= pl.endLine; n++) ranges.push(suggOldLine.range(doc.line(n).from));
+          ranges.push(Decoration.widget({ widget: new SuggestionWidget(pl, k, place), block: true, side: 1 }).range(pl.to));
+          return;
+        }
+        const block = item.block;
+        const head = new EditHeadWidget(block, k, place);
         if (!block.newLines.length) {
           ranges.push(Decoration.replace({ widget: head, block: true }).range(block.from, block.to));
           return;
@@ -1047,6 +1281,8 @@
       '.ol-edit-head': { borderLeft: '3px solid #c0392b', userSelect: 'none' },
       '.ol-edit-bar': {
         display: 'flex',
+        flexWrap: 'wrap',
+        rowGap: '3px',
         alignItems: 'center',
         gap: '6px',
         padding: '2px 8px',
@@ -1059,6 +1295,7 @@
       '.ol-edit-label': { fontWeight: '600', opacity: '0.75' },
       '.ol-edit-meta': { fontSize: '11px', opacity: '0.6', marginRight: 'auto' },
       '.ol-edit-bar button': {
+        whiteSpace: 'nowrap',
         font: 'inherit',
         border: '0',
         borderRadius: '12px',
@@ -1068,6 +1305,19 @@
       },
       '.ol-edit-bar button.ol-edit-accept': { background: '#098842' },
       '.ol-edit-bar button.ol-edit-reject': { background: '#b83a33' },
+      '.ol-sugg': { borderLeft: '3px solid #6d28d9', userSelect: 'none' },
+      '.ol-edit-nav, .ol-edit-all': { whiteSpace: 'nowrap', flex: '0 0 auto' },
+      '.ol-sugg-bar .ol-edit-meta': { flex: '1 1 160px', minWidth: '0' },
+      '&light .ol-sugg-bar': { background: '#f1ecfb', color: '#1b222c' },
+      '&dark .ol-sugg-bar': { background: '#2a2340', color: '#e7e9ee' },
+      '.ol-sugg-bar .ol-edit-label': { color: '#6d28d9' },
+      '&dark .ol-sugg-bar .ol-edit-label': { color: '#c4b5fd' },
+      '.ol-sugg-line': { padding: '0 2px 0 6px', whiteSpace: 'pre-wrap' },
+      '&light .ol-sugg-line': { background: 'rgba(37, 99, 235, 0.12)' },
+      '&dark .ol-sugg-line': { background: 'rgba(59, 130, 246, 0.22)' },
+      '&light .ol-sugg-old, &light .ol-sugg-old.cm-activeLine': { background: 'rgba(124, 58, 237, 0.10)' },
+      '&dark .ol-sugg-old, &dark .ol-sugg-old.cm-activeLine': { background: 'rgba(167, 139, 250, 0.14)' },
+      '.ol-sugg-old': { borderLeft: '3px solid #8b5cf6' },
       '.ol-edit-nav': { display: 'inline-flex', alignItems: 'center', gap: '2px', marginLeft: '6px', fontSize: '11px', opacity: '0.85' },
       '.ol-edit-bar .ol-edit-nav button': { background: 'transparent', color: 'inherit', padding: '0 5px', fontSize: '14px', lineHeight: '1' },
       '.ol-edit-bar .ol-edit-nav button:disabled': { opacity: '0.3', cursor: 'default' },

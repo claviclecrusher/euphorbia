@@ -125,6 +125,21 @@ The new text is what compiles; the old text is kept in the source as comments:
 
 ## AI
 
+### AI suggestions (only you see them)
+
+Changes made by the AI (`Ctrl+K` and chat edits) are **AI suggestions**, not edit
+blocks. They are kept only in this app on this computer (per project); the file
+on the server keeps the original text, so collaborators and the PDF see the
+original until you press **Accept**, which writes the suggestion into the file.
+**Reject** discards it. In the editor the original lines are marked purple and the
+suggested text appears below them in a blue box headed *AI suggestion (only you)*.
+
+Suggestions count together with edit blocks in `‹ n/N ›` and in Accept all /
+Reject all. A suggestion cannot be edited before it is accepted (accept it, then
+edit, or ask the AI again). If the original text changes before you accept (for
+example a collaborator rewrites it), the suggestion no longer matches and is not
+shown; Accept refuses it.
+
 ### Connections and models
 
 **File → AI Settings…** holds the connections: Claude (API key), OpenAI (API key),
@@ -151,7 +166,7 @@ Chat replies themselves are not affected.
 ### Ctrl+K: edit the selection
 
 Select lines, press `Ctrl+K`, pick a model, type what to change and press Enter.
-The rewrite comes back as an edit with diff (**Accept** / **Reject**) marked
+The rewrite comes back as an AI suggestion (**Accept** / **Reject**) marked
 `AI (<model>)`. The selection and up to 20 lines around it are sent.
 
 ### AI Chat panel
@@ -159,9 +174,9 @@ The rewrite comes back as an edit with diff (**Accept** / **Reject**) marked
 The panel under File tree / File outline (collapsible, resizable; widen the left
 sidebar for more room) is a chat about the whole project. `Ctrl+L` adds the
 selected lines to the message as a link (`main.tex:12-18`); clicking a link jumps
-there. When you ask for a change, the model's edits are added to the files as
-edits with diff for Accept / Reject; an edit that can't be placed is listed with
-the reason and a **Try again** button.
+there. When you ask for a change, the model's edits become AI suggestions in the
+files (no file is switched or changed until you accept); an edit that can't be
+placed is listed with the reason and a **Try again** button.
 
 The **mode** button next to Send cycles through three modes, and each message
 carries its mode to the model:

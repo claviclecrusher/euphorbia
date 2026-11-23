@@ -538,13 +538,14 @@
     const head = el('div', 'ol-chat-edit-head');
     const name = el('button', 'ol-chat-ref-link', `✎ ${edit.file}${state && state.line ? `:${state.line}` : ''}`);
     name.type = 'button';
-    name.addEventListener('click', () => {
-      if (state && state.line) revealLines(edit.file, state.line, state.line);
-      else openPath(edit.file);
+    name.addEventListener('click', async () => {
+      if (state && state.line) return revealLines(edit.file, state.line, state.line);
+      await openPath(edit.file);
+      if (state && state.proposalId && window.__olDesktopEdits) setTimeout(() => window.__olDesktopEdits.revealProposal(state.proposalId), 150);
     });
     const st = el('span', 'ol-chat-edit-state');
     if (!state) st.textContent = 'pending';
-    else if (state.ok) st.textContent = 'added for review';
+    else if (state.ok) st.textContent = state.proposalId ? 'suggested (only you see it until you accept)' : 'added for review';
     else st.textContent = state.error || 'not applied';
     st.classList.toggle('ok', !!(state && state.ok));
     st.classList.toggle('error', !!(state && !state.ok));
@@ -840,12 +841,12 @@
       if (card) render();
       return false;
     }
-    const ok = await openPath(edit.file);
-    let res;
-    if (!ok) res = { ok: false, error: 'File not found in the project.' };
-    else if (!window.__olDesktopEdits || !view()) res = { ok: false, error: 'Editor not ready.' };
-    else res = window.__olDesktopEdits.insertEdit(view(), edit.find, edit.replace, state.by || 'AI');
-    Object.assign(state, { ok: res.ok, error: res.error || null, line: res.line || null });
+    // AI edits become suggestions kept on this computer until accepted.
+    const res = window.__olDesktopEdits
+      ? window.__olDesktopEdits.addProposal({ file: edit.file, find: edit.find, replace: edit.replace, by: state.by || 'AI' })
+      : { ok: false, error: 'Editor not ready.' };
+    if (res.ok) state.proposalId = res.id;
+    Object.assign(state, { ok: res.ok, error: res.error || null, line: null });
     save();
     if (card) render();
     return res.ok;
