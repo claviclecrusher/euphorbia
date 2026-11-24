@@ -36,6 +36,8 @@ On Ubuntu 24.04+ the AppImage needs `libfuse2` and may need `--no-sandbox`.
   or drag a tab to split the editor top/bottom.
 - **Candidates** (`Ctrl+Shift+I`) — keep alternative versions of some lines and
   switch between them; stored as comments in the `.tex` file.
+- **Euphorbia code view** (`Ctrl+Shift+U`, or `%` on the editor toolbar) — show
+  candidates and edits as the plain comments they are in the source, and back.
 - **Edits with diff** (`Ctrl+Shift+K`) — edit a copy of some lines next to the
   original, then **Accept** or **Reject**; shows who and when.
 - **Window theme** — **View → Window Theme**: System, Light or Dark.

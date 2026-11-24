@@ -344,6 +344,71 @@
   let reviewViewRef = null;
   let countsEffect = null; // StateEffect, set once CodeMirror is known
 
+  // ---- Euphorbia code view
+  //
+  // On: candidates and edit blocks are shown as the comments they are in the
+  // source (no bars, colours or folded lines). Kept per computer; the split
+  // panes follow each other through localStorage.
+  const RAW_KEY = 'ol-desktop-raw-view';
+  let rawView = localStorage.getItem(RAW_KEY) === '1';
+  let rawEffect = null; // StateEffect
+  const rawViews = new Set();
+  const rawButtons = new Set();
+  function applyRaw(on) {
+    rawView = on;
+    for (const v of rawViews) if (rawEffect) v.dispatch({ effects: rawEffect.of(on) });
+    for (const b of rawButtons) {
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
+    }
+  }
+  function toggleRaw() {
+    const on = !rawView;
+    try {
+      localStorage.setItem(RAW_KEY, on ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+    applyRaw(on);
+    return true;
+  }
+  window.addEventListener('storage', (e) => {
+    if (e.key === RAW_KEY) applyRaw(e.newValue === '1');
+  });
+
+  // The button on Overleaf's editor toolbar (next to search), re-added when
+  // the toolbar is redrawn.
+  function addRawButton() {
+    for (const group of document.querySelectorAll('.ol-cm-toolbar .ol-cm-toolbar-end')) {
+      if (group.querySelector('.ol-raw-toggle')) continue;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ol-cm-toolbar-button ol-raw-toggle' + (rawView ? ' active' : '');
+      b.setAttribute('aria-pressed', String(rawView));
+      const mod = /Mac/.test(navigator.platform) ? 'Cmd' : 'Ctrl';
+      b.title = `Euphorbia code view: show candidates and edits as their source comments (${mod}+Shift+U)`;
+      b.setAttribute('aria-label', 'Euphorbia code view');
+      b.textContent = '%';
+      b.addEventListener('mousedown', (e) => e.preventDefault());
+      b.addEventListener('click', () => toggleRaw());
+      group.insertBefore(b, group.firstChild);
+      rawButtons.add(b);
+    }
+    for (const b of rawButtons) if (!b.isConnected) rawButtons.delete(b);
+  }
+  const rawStyle = document.createElement('style');
+  rawStyle.textContent = `
+    .ol-raw-toggle { font: 600 15px ui-monospace, monospace !important; min-width: 28px; }
+    .ol-raw-toggle.active { background: rgba(9,136,66,.22) !important; color: #098842 !important; border-radius: 4px; }
+  `;
+  const startRawButton = () => {
+    if (!rawStyle.isConnected && document.head) document.head.appendChild(rawStyle);
+    addRawButton();
+    new MutationObserver(addRawButton).observe(document.documentElement, { childList: true, subtree: true });
+  };
+  if (document.documentElement) startRawButton();
+  else document.addEventListener('DOMContentLoaded', startRawButton);
+
   const nav = () => window.__olDesktopNav || null;
   const currentReviewPath = () => (nav() ? nav().currentPath() : '');
   const storeView = () => {
@@ -1056,6 +1121,7 @@
   function buildExtension(CM) {
     const { Decoration, EditorView, Prec, StateEffect, StateField, WidgetType, keymap } = CM;
     countsEffect = countsEffect || StateEffect.define();
+    rawEffect = rawEffect || StateEffect.define();
 
     class BarWidget extends WidgetType {
       constructor(block) {
@@ -1376,6 +1442,7 @@
     const bodyLine = Decoration.line({ class: 'ol-cand-body' });
 
     function build(state) {
+      if (rawView) return Decoration.none;
       const doc = state.doc;
       const ranges = [];
       for (const block of parse(doc)) {
@@ -1417,7 +1484,7 @@
 
     const field = StateField.define({
       create: (state) => build(state),
-      update: (value, tr) => (tr.docChanged || tr.effects.some((e) => e.is(countsEffect)) ? build(tr.state) : value),
+      update: (value, tr) => (tr.docChanged || tr.effects.some((e) => e.is(countsEffect) || e.is(rawEffect)) ? build(tr.state) : value),
       provide: (f) => [
         EditorView.decorations.from(f),
         EditorView.atomicRanges.of((view) => view.state.field(f, false) || Decoration.none),
@@ -1426,8 +1493,14 @@
     // Keep a handle on the view for count refreshes.
     const viewTracker = CM.ViewPlugin.define((view) => {
       reviewViewRef = view;
+      rawViews.add(view);
       setTimeout(refreshReview, 500);
-      return { destroy: () => (reviewViewRef === view ? (reviewViewRef = null) : null) };
+      return {
+        destroy: () => {
+          rawViews.delete(view);
+          if (reviewViewRef === view) reviewViewRef = null;
+        },
+      };
     });
 
     const theme = EditorView.baseTheme({
@@ -1566,6 +1639,7 @@
         keymap.of([
           { key: 'Mod-Shift-i', run: createOrAdd, preventDefault: true },
           { key: 'Mod-Shift-k', run: createEdit, preventDefault: true },
+          { key: 'Mod-Shift-u', run: toggleRaw, preventDefault: true },
           { key: 'Mod-k', run: aiEdit, preventDefault: true },
         ])
       ),
