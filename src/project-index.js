@@ -522,6 +522,24 @@ function workspace(p, openDoc, { embed = null } = {}) {
       accepted.length = 0;
     },
 
+    // A note under the line that contains the end of `find`.
+    checkNote({ file, find, comment }) {
+      const f = fileOf(file);
+      if (!f) return { ok: false, error: `No file "${file}".` };
+      if (/\.bib$/i.test(f.path)) return { ok: false, error: '.bib files are read-only.' };
+      if (!String(comment || '').trim()) return { ok: false, error: 'comment is empty.' };
+      const text = f.text;
+      const at = text.indexOf(find || '\u0000');
+      if (!find || at < 0) return { ok: false, error: 'find was not found in the file; copy a part of the line exactly.' };
+      if (text.indexOf(find, at + 1) >= 0) return { ok: false, error: 'find occurs more than once in the file; give more of the line.' };
+      const line = text.slice(0, at + find.length).split('\n').length;
+      const hit = blockRanges(text).find(([a, b]) => line >= a && line <= b);
+      if (hit && !(hit[2] && line >= hit[2] && line <= hit[3]) && !/^\s*%%edit:new/.test(text.split('\n')[line - 1])) {
+        return { ok: false, error: 'That line is inside a candidates block or the old part of an edit; pick a line outside it.' };
+      }
+      return { ok: true, file: f.path, line };
+    },
+
     checkMark({ file, start_line, end_line, kind }) {
       const f = fileOf(file);
       if (!f) return { ok: false, error: `No file "${file}".` };

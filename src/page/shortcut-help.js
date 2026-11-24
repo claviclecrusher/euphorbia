@@ -10,6 +10,7 @@
     [`${ctrl} + K`, 'AI edit: rewrite the selected lines from an instruction; the result is an edit with Accept / Reject (File > AI Settings)'],
     [`${ctrl} + L`, 'AI chat: open the AI Chat tab and add the selected lines (if any) to the message'],
     [`${ctrl} + Shift + K`, 'Edit with diff: keep the selected lines as the old version and edit a copy (Accept / Reject)'],
+    [`${ctrl} + Shift + J`, 'Note: attach a short note to the line (a "% comment (author, time): ..." line under it, shown as a sticky note)'],
     [`${ctrl} + Shift + P`, 'Go to code location in PDF (from the cursor)'],
     [`${ctrl} + Shift + U`, 'Euphorbia code view: show candidates and edits as the comments they are in the source (toggle; also on the editor toolbar)'],
     [`${ctrl} + 1 … 9`, 'Switch to a saved server'],

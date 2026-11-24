@@ -96,6 +96,9 @@ The files may contain two kinds of comment blocks that this app manages:
 - %%edit:begin ... %%edit:end: a change waiting for review. The %- lines are the old text
   (commented out); the lines between %%edit:new and %%edit:end are the new text and are what
   compiles. kind="ai" marks your own suggestions; the others were made by people.
+- % comment (author, time): text -- a note about the line above it (several in a row are all
+  about the first non-note line above). Notes are not part of the paper; read them as remarks
+  from the user or from you. Add one with add_comment to show the user where something is.
 When you read, quote or reason about the paper, use the text that compiles: ignore %| and %-
 lines unless the user asks about the alternatives or the old text.
 
@@ -561,6 +564,21 @@ const EDIT_TOOL = {
   },
 };
 
+const NOTE_TOOL = {
+  name: 'add_comment',
+  description: 'Attach a short note (sticky comment) to a line of a file, so the user can find the place: for example when they ask where something is, or to flag something to check. It is written into the file as a comment line "% comment (author, time): text" under that line; it does not change the paper. Not for .bib files.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      file: { type: 'string', description: 'File path' },
+      find: { type: 'string', description: 'Text copied exactly from the line to comment on (unique in the file)' },
+      comment: { type: 'string', description: 'The note, one short sentence' },
+    },
+    required: ['file', 'find', 'comment'],
+    additionalProperties: false,
+  },
+};
+
 const MARK_TOOL = {
   name: 'mark',
   description: 'Mark a place related to the user\'s passage or question. It is highlighted for the user.',
@@ -583,9 +601,9 @@ const MAX_TOOL_ROUNDS = 10;
 // Tools offered in a mode. Edit gets propose_edit, search gets mark; read neither.
 function toolsFor(mode, hasRelated, hasRefs = false) {
   const base = [...READ_TOOLS.filter((t) => t.name !== 'find_related' || hasRelated), ...(hasRefs ? REF_TOOLS : [])];
-  if (mode === 'edit') return [...base, EDIT_TOOL];
-  if (mode === 'search') return [...base, MARK_TOOL];
-  return base;
+  if (mode === 'edit') return [...base, EDIT_TOOL, NOTE_TOOL];
+  if (mode === 'search') return [...base, MARK_TOOL, NOTE_TOOL];
+  return [...base, NOTE_TOOL];
 }
 
 function checkInput(def, input) {
@@ -615,6 +633,12 @@ async function runTool(ws, tools, defs, name, input, out) {
     out.proposals.push({ file: r.file, find: input.find, replace: input.replace });
     return { ok: true, text: `Edit ${out.proposals.length} accepted for review (${r.file}, from line ${r.line}).` };
   }
+  if (name === 'add_comment') {
+    const r = ws.checkNote(input);
+    if (!r.ok) return { ok: false, text: `Comment rejected: ${r.error}` };
+    (out.notes ||= []).push({ file: r.file, find: input.find, text: String(input.comment).slice(0, 500) });
+    return { ok: true, text: `Comment added under ${r.file}:${r.line}.` };
+  }
   if (name === 'mark') {
     const r = ws.checkMark(input);
     if (!r.ok) return { ok: false, text: `Mark rejected: ${r.error}` };
@@ -632,6 +656,7 @@ function toolStatus(name, input) {
   if (name === 'find_related') return 'Looking for related parts…';
   if (name === 'expand') return `Opening ${i.id || 'the index'}…`;
   if (name === 'read_compile_log') return 'Compiling and reading the log…';
+  if (name === 'add_comment') return `Adding a note to ${i.file || 'a file'}…`;
   if (name.startsWith('ref_')) return 'Reading a referenced project…';
   if (name === 'read_history') return `Re-reading earlier messages (${i.id || ''})…`;
   if (name === 'propose_edit') return `Checking an edit to ${i.file || 'a file'}…`;
@@ -1282,7 +1307,7 @@ async function runChat(sender, req) {
       throw new Error(stopped ? 'Stopped before the model answered.' : 'The model returned an empty answer.');
     }
     if (stopped) send('notice', { text: 'Stopped at the token limit; the answer may be incomplete.' });
-    send('done', { text, by: out.by || `AI (${pick.model})`, lookups: rounds, used: acct.used, proposals: out.proposals, hits: out.hits });
+    send('done', { text, by: out.by || `AI (${pick.model})`, lookups: rounds, used: acct.used, proposals: out.proposals, hits: out.hits, notes: out.notes || [] });
   } catch (err) {
     send('error', { text: friendly(err) });
   } finally {

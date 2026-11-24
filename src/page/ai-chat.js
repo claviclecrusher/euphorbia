@@ -834,6 +834,26 @@
         box.appendChild(editSummary(good.map((g) => ({ edit: edits[g.edit], state: states[g.edit] }))));
       }
     }
+    // Notes the AI attached: one line with their places.
+    const notes = Array.isArray(msg.notes) ? msg.notes : [];
+    if (notes.length) {
+      const st = msg.noteStates || [];
+      const card = el('div', 'ol-chat-edit ol-chat-notes');
+      const okN = st.filter((x) => x && x.ok).length;
+      card.appendChild(el('span', 'ol-chat-edit-count', `\u{1F4CC} ${notes.length} note${notes.length === 1 ? '' : 's'}`));
+      card.appendChild(el('span', 'ol-chat-edit-state' + (st.length && okN < notes.length ? ' error' : ' ok'), st.length ? (okN === notes.length ? ' added' : ` ${okN} added`) : ' pending'));
+      const files = el('div', 'ol-chat-edit-files');
+      notes.forEach((n, i) => {
+        const s1 = st[i];
+        const b = el('button', 'ol-chat-ref-link', `${n.file.split('/').pop()}${s1 && s1.line ? `:${s1.line}` : ''}`);
+        b.type = 'button';
+        b.title = s1 && !s1.ok ? `${n.text}\n(not added: ${s1.error})` : n.text;
+        b.addEventListener('click', () => (s1 && s1.line ? revealLines(n.file, s1.line, s1.line) : openPath(n.file)));
+        files.appendChild(b);
+      });
+      card.appendChild(files);
+      box.appendChild(card);
+    }
     if (hits.length) {
       const wrap = el('div', 'ol-chat-hits');
       hits.forEach((h, i) => {
@@ -982,7 +1002,7 @@
       setStatus(ev.text, true);
       render();
     } else if (ev.type === 'done') {
-      const msg = { role: 'assistant', content: ev.text, by: ev.by, edits: [], mode: active.mode, proposals: ev.proposals || [], hits: ev.hits || [] };
+      const msg = { role: 'assistant', content: ev.text, by: ev.by, edits: [], mode: active.mode, proposals: ev.proposals || [], hits: ev.hits || [], notes: ev.notes || [] };
       const conv = convs.find((c) => c.id === active.conv);
       if (conv) conv.messages.push(msg);
       active = null;
@@ -990,6 +1010,7 @@
       save();
       render();
       await applyEdits(msg);
+      await applyNotes(msg);
     }
   });
 
@@ -1106,6 +1127,26 @@
     save();
     if (card) render();
     return res.ok;
+  }
+
+  // Notes the AI attached (add_comment): written into the files as comment
+  // lines under the lines they are about.
+  async function applyNotes(msg) {
+    const notes = Array.isArray(msg.notes) ? msg.notes : [];
+    if (!notes.length || !window.__olDesktopEdits || !window.__olDesktopEdits.addNote) return;
+    const back = currentPath();
+    let ok = 0;
+    msg.noteStates = [];
+    for (const n of notes) {
+      const res = await window.__olDesktopEdits.addNote({ file: n.file, find: n.find, text: n.text, by: msg.by || 'AI' });
+      msg.noteStates.push({ ok: res.ok, error: res.error || null, line: res.line || null });
+      if (res.ok) ok++;
+    }
+    save();
+    render();
+    const files = new Set(notes.map((n) => n.file));
+    if (back && !(files.size === 1 && !files.has(back))) await openPath(back);
+    setStatus(ok === notes.length ? `${ok} note(s) added.` : `${ok} of ${notes.length} note(s) added.`, ok !== notes.length);
   }
 
   async function applyEdits(msg) {
@@ -1296,6 +1337,7 @@
     .ol-chat-edit .ol-chat-ref-link { padding: 0; max-width: 100%; }
     .ol-chat-edit-state { font-size: 10px; opacity: .75; }
     .ol-chat-edit-count { font-weight: 600; }
+    .ol-chat-notes { border-left-color: #e0b100; background: rgba(224,177,0,.12); }
     .ol-chat-link { opacity: .55; }
     .ol-chat-link:hover { opacity: 1; }
     .ol-chat-linked { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 8px 4px; font-size: 11px; }

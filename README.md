@@ -39,6 +39,10 @@ On Ubuntu 24.04+ the AppImage needs `libfuse2` and may need `--no-sandbox`.
   switch between them; stored as comments in the `.tex` file.
 - **Right-click in the editor**: Candidates, Edit with Diff, AI Edit, Add to AI Chat
   and Go to Code Location in PDF (`Ctrl+Shift+P`).
+- **Notes** (`Ctrl+Shift+J`, or right-click → Add Note) — a short note on a line,
+  saved as `% comment (author, time): text` under it and shown as a sticky note
+  (click to edit, × to remove). The AI can add notes too, e.g. to show where
+  something is.
 - **Euphorbia code view** (`Ctrl+Shift+U`, or `%` on the editor toolbar) — show
   candidates and edits as the plain comments they are in the source, and back.
 - **Edits with diff** (`Ctrl+Shift+K`) — edit a copy of some lines next to the
