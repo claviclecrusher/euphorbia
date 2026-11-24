@@ -22,7 +22,6 @@ const PROVIDERS = ['claude', 'openai', 'local', 'connector'];
 const FREE = new Set(['local', 'connector']);
 const HAS_URL = new Set(['local', 'connector']);
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-const SONG1_PAID = 'claude-opus-5-5';
 const PROVIDER_NAME = { claude: 'Claude', openai: 'OpenAI', local: 'Local', connector: 'Connector' };
 const DEFAULTS = {
   claude: { models: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'] },
@@ -155,7 +154,8 @@ function settings() {
     out[p] = e;
   }
   out.summary = typeof s.summary === 'string' ? s.summary : '';
-  // One local model for chat, summaries and song-1, so the local server never
+  for (const k of ['chat', 'edit']) if (out.selected[k] === 'hybrid:song-1') out.selected[k] = 'hybrid:auto';
+  // One local model for chat, summaries and Auto, so the local server never
   // swaps models on its GPU. Earlier lists keep the one used for summaries.
   if (out.local.models.length > 1) {
     const sum = out.summary.startsWith('local:') ? out.summary.slice(6) : '';
@@ -203,6 +203,7 @@ function publicSettings() {
   const out = {
     encrypted: safeStorage.isEncryptionAvailable(), summary: s.summary, tokenLimit: s.tokenLimit, embedding: s.embedding, choices: choices(s),
     styleEnabled: s.styleEnabled, style: s.style, defaultStyle: DEFAULT_STYLE, effort: s.effort,
+    auto: autoStatus(s),
   };
   for (const p of PROVIDERS) {
     out[p] = { models: s[p].models, hasKey: !!openKey(s[p].key), ...(HAS_URL.has(p) ? { baseURL: s[p].baseURL } : {}) };
@@ -257,25 +258,50 @@ function choices(s = settings(), opts = {}) {
     if (!usable(s, p)) continue;
     for (const m of s[p].models) out.push({ id: `${p}:${m}`, provider: p, model: m, label: `${PROVIDER_NAME[p]} · ${m}` });
   }
-  if (opts.hybrid && song1Parts(s)) {
-    out.push({ id: 'hybrid:song-1', provider: 'hybrid', model: 'song-1', label: 'Hybrid · song-1 (local model first, Claude Opus 5.5 when needed)' });
+  if (opts.hybrid && autoParts(s).ok) {
+    out.push({ id: 'hybrid:auto', provider: 'hybrid', model: 'auto', label: 'Auto · local model first, then Claude Haiku / Sonnet / Opus by difficulty' });
   }
   return out;
 }
 
-// song-1 needs a local model and a Claude connection. The local model is the
-// summary model when that is local, else the first local model.
-function song1Parts(s = settings()) {
-  if (!usable(s, 'local') || !s.local.models.length || !usable(s, 'claude')) return null;
-  const local = s.local.models[0];
-  return {
-    local: { s, provider: 'local', model: local, id: `local:${local}` },
-    paid: { s, provider: 'claude', model: SONG1_PAID, id: `claude:${SONG1_PAID}`, effort: 'low' },
-  };
+// Auto mode needs the local model and at least one Claude model of the three
+// sizes. Each size is taken from the Connector's models when one matches its
+// name (no API cost), else from the Claude API models.
+const AUTO_TIERS = ['haiku', 'sonnet', 'opus'];
+function autoParts(s = settings()) {
+  const local = usable(s, 'local') && s.local.models.length ? { s, provider: 'local', model: s.local.models[0] } : null;
+  const tiers = {};
+  for (const t of AUTO_TIERS) {
+    const re = new RegExp(t, 'i');
+    const viaConnector = usable(s, 'connector') && s.connector.models.find((m) => re.test(m));
+    const viaApi = !viaConnector && usable(s, 'claude') && s.claude.models.find((m) => re.test(m));
+    tiers[t] = viaConnector
+      ? { s, provider: 'connector', model: viaConnector, via: 'Connector' }
+      : viaApi
+        ? { s, provider: 'claude', model: viaApi, via: 'Claude API' }
+        : null;
+  }
+  return { local, tiers, ok: !!local && AUTO_TIERS.some((t) => tiers[t]) };
+}
+
+// The model for a difficulty (1-5): Haiku for 1-2, Sonnet for 3, Opus for 4-5;
+// when that size is missing, the next one up, then down.
+function autoPick(parts, difficulty) {
+  const want = difficulty >= 4 ? 'opus' : difficulty === 3 ? 'sonnet' : 'haiku';
+  const order = { haiku: ['haiku', 'sonnet', 'opus'], sonnet: ['sonnet', 'opus', 'haiku'], opus: ['opus', 'sonnet', 'haiku'] }[want];
+  for (const t of order) if (parts.tiers[t]) return { ...parts.tiers[t], tier: t, wanted: want };
+  return null;
+}
+
+function autoStatus(s = settings()) {
+  const p = autoParts(s);
+  const tier = (t) => (p.tiers[t] ? { model: p.tiers[t].model, via: p.tiers[t].via } : null);
+  return { ok: p.ok, local: p.local ? p.local.model : null, haiku: tier('haiku'), sonnet: tier('sonnet'), opus: tier('opus') };
 }
 
 function resolve(choiceId, purpose) {
   const s = settings();
+  if (choiceId === 'hybrid:song-1') choiceId = 'hybrid:auto'; // the name before 0.26
   const list = choices(s, { hybrid: purpose === 'chat' });
   const pick = list.find((c) => c.id === choiceId) || list.find((c) => c.id === s.selected[purpose]) || list[0];
   if (!pick) throw new Error('No AI model is set up. Add an API connection in File > AI Settings.');
@@ -859,22 +885,23 @@ function releaseIndexing(projectId) {
 
 // --------------------------------------------------------------- chat: run ---
 
-// ------------------------------------------------------------------ song-1 ---
+// -------------------------------------------------------------------- auto ---
 //
-// A hybrid that manages prompts, not a model of its own:
+// Auto manages prompts, not a model of its own:
 //   1. the local model answers (draft, streamed to the user);
 //   2. the local model reviews question + draft with a fixed rubric and scores
 //      difficulty and quality (1-5);
 //   3. quality <= 3, an unreadable review, an empty draft or failed edit calls
-//      hand the question to Claude Opus 5.5 at effort low;
-//   4. for a hard question (difficulty >= 4), Opus first writes a short plan of
-//      read-only subtasks (Minions, ICML 2025: the large model plans, the small
-//      one executes), the local model runs them with the read tools, and Opus
-//      answers with the draft, the review and the subtask results as unverified
-//      notes, checking them with its own tools.
+//      hand the question to Claude, sized by difficulty: Haiku (1-2), Sonnet
+//      (3), Opus (4-5), from the Connector when it has that size, else the API;
+//   4. for a hard question (difficulty >= 4), that model first writes a short
+//      plan of read-only subtasks (Minions, ICML 2025: the large model plans,
+//      the small one executes), the local model runs them with the read tools,
+//      and the model answers with the draft, the review and the subtask results
+//      as unverified notes, checking them with its own tools.
 // Only the final answer's edits and marks reach the files.
 
-const SONG1_MAX_SUBTASKS = 4;
+const AUTO_MAX_SUBTASKS = 4;
 
 function lastQuestion(history) {
   const h = Array.isArray(history) ? history : [];
@@ -908,23 +935,23 @@ Lower the quality score when the answer: ignores part of the request; claims thi
 
 Reply with JSON only: {"difficulty": n, "quality": n, "missing": "what is wrong or missing, one or two sentences"}`;
 
-const PLAN_PROMPT = `You plan work for a small local model that will help answer a request about a LaTeX paper. The local model can read the project (read units, read files, search, find related text) but writes nothing. Split out up to ${SONG1_MAX_SUBTASKS} self-contained subtasks it can do well: finding and quoting the relevant passages, collecting definitions or notation, listing where something is used, summarizing a section. Leave reasoning, judgement, math and the final wording to yourself. Each subtask must make sense on its own, without the conversation.
+const PLAN_PROMPT = `You plan work for a small local model that will help answer a request about a LaTeX paper. The local model can read the project (read units, read files, search, find related text) but writes nothing. Split out up to ${AUTO_MAX_SUBTASKS} self-contained subtasks it can do well: finding and quoting the relevant passages, collecting definitions or notation, listing where something is used, summarizing a section. Leave reasoning, judgement, math and the final wording to yourself. Each subtask must make sense on its own, without the conversation.
 
 Reply with JSON only: {"subtasks": ["...", "..."]} (an empty list if nothing is worth handing off).`;
 
-async function song1(c) {
+async function autoRun(c) {
   const { s, mode, ws, messages, prompt, defs, tools, out, send, checkBudget, signal, acct, question } = c;
-  const parts = song1Parts(s);
-  if (!parts) throw new Error('song-1 needs a local model and a Claude connection (File > AI Settings).');
+  const parts = autoParts(s);
+  if (!parts.ok) throw new Error('Auto needs the local model and at least one Claude model (Haiku, Sonnet or Opus) from the Connector or the Claude API; see File > AI Settings.');
   const free = async () => true;
 
   // 1. local draft, streamed so the user can read it while it is checked.
-  send('status', { text: `song-1: local draft (${parts.local.model})…`, model: parts.local.model });
+  send('status', { text: `Auto: local draft (${parts.local.model})…`, model: parts.local.model });
   const draftOut = { proposals: [], hits: [] };
   const draft = await agentLoop({ pick: parts.local, prompt, ws, messages, defs, tools, out: draftOut, send, checkBudget: free, signal, acct });
 
   // 2. review by the local model.
-  send('status', { text: 'song-1: reviewing the draft…' });
+  send('status', { text: 'Auto: reviewing the draft…' });
   const work = [];
   if (draftOut.proposals.length) work.push(`Edits it proposed:\n${proposalsText(draftOut.proposals)}`);
   if (draftOut.hits.length) work.push(`Places it marked: ${draftOut.hits.length}`);
@@ -952,15 +979,17 @@ async function song1(c) {
 
   if (!reasons.length) {
     Object.assign(out, draftOut);
-    out.by = `song-1 (${parts.local.model}; ${scores})`;
+    out.by = `Auto (${parts.local.model}; ${scores})`;
     return draft;
   }
 
-  // 3. hand over to Opus.
+  // 3. hand over to Claude, sized by difficulty.
+  const paid = autoPick(parts, difficulty);
+  const metered = paid.provider === 'claude';
   ws.resetEdits();
-  send('reset', { text: `song-1: handing this to ${SONG1_PAID} (${reasons.join(', ')})…` });
+  send('reset', { text: `Auto: handing this to ${paid.model} (${reasons.join(', ')})…` });
   const notes = [
-    `[song-1] A local model (${parts.local.model}) answered this request first; a review found it lacking (${scores}${missing ? `: ${missing}` : ''}). Its draft and any notes below are unverified: check them with the tools before relying on them, and write the full answer yourself (the user sees only your answer${mode === 'edit' ? ', and only your propose_edit calls are applied' : ''}).`,
+    `[auto] A local model (${parts.local.model}) answered this request first; a review found it lacking (${scores}${missing ? `: ${missing}` : ''}). Its draft and any notes below are unverified: check them with the tools before relying on them, and write the full answer yourself (the user sees only your answer${mode === 'edit' ? ', and only your propose_edit calls are applied' : ''}).`,
     `<local-draft>\n${draft.text.slice(0, 8000)}\n</local-draft>`,
   ];
   if (draftOut.proposals.length) notes.push(`<local-draft-edits>\n${proposalsText(draftOut.proposals)}\n</local-draft-edits>`);
@@ -972,20 +1001,20 @@ async function song1(c) {
       { type: 'text', text: ws.index },
     ];
     const planMsg = `Request:\n<request>\n${question}\n</request>\n\nWhat the review found missing in a first attempt: ${missing || 'unspecified'}`;
-    if (await checkBudget(estimate(PLAN_PROMPT.length + ws.index.length + planMsg.length), true)) {
-      send('status', { text: `song-1: ${SONG1_PAID} is planning…` });
+    if (await checkBudget(estimate(PLAN_PROMPT.length + ws.index.length + planMsg.length), metered)) {
+      send('status', { text: `Auto: ${paid.model} is planning…` });
       let subtasks = [];
       try {
-        const r = await complete(parts.paid, planSystem, [{ role: 'user', content: planMsg }], signal);
+        const r = await complete(paid, planSystem, [{ role: 'user', content: planMsg }], signal);
         const j = parseJson(r.text);
-        subtasks = (j && Array.isArray(j.subtasks) ? j.subtasks : []).map((t) => String(t).slice(0, 1500)).filter(Boolean).slice(0, SONG1_MAX_SUBTASKS);
+        subtasks = (j && Array.isArray(j.subtasks) ? j.subtasks : []).map((t) => String(t).slice(0, 1500)).filter(Boolean).slice(0, AUTO_MAX_SUBTASKS);
       } catch (err) {
         if (signal.aborted) throw err;
       }
       const readDefs = toolsFor('read', ws.hasRelated);
       const results = [];
       for (let i = 0; i < subtasks.length; i++) {
-        send('status', { text: `song-1: local subtask ${i + 1}/${subtasks.length}…` });
+        send('status', { text: `Auto: local subtask ${i + 1}/${subtasks.length}…` });
         const quiet = (type, payload) => {
           if (type === 'status' || type === 'pause') send(type, payload);
         };
@@ -1007,10 +1036,11 @@ async function song1(c) {
   const final = messages.map((m) => ({ ...m }));
   const last = final[final.length - 1];
   last.content = `${notes.join('\n\n')}\n\n${last.content}`;
-  const paidCheck = (n) => checkBudget(n, true);
-  send('status', { text: `song-1: ${SONG1_PAID} is answering…`, model: SONG1_PAID });
-  const r = await agentLoop({ pick: parts.paid, prompt, ws, messages: final, defs, tools, out, send, checkBudget: paidCheck, signal, acct });
-  out.by = `song-1 → ${SONG1_PAID} (${reasons.join(', ')}; local ${scores})`;
+  const paidCheck = (n) => checkBudget(n, metered);
+  send('status', { text: `Auto: ${paid.model} is answering…`, model: paid.model });
+  const r = await agentLoop({ pick: paid, prompt, ws, messages: final, defs, tools, out, send, checkBudget: paidCheck, signal, acct });
+  const size = paid.tier === paid.wanted ? paid.tier : `${paid.tier}, as ${paid.wanted} is not set up`;
+  out.by = `Auto → ${paid.model} (${size}; ${reasons.join(', ')}; local ${scores})`;
   return { text: r.text, rounds: draft.rounds + r.rounds, stopped: r.stopped };
 }
 
@@ -1299,7 +1329,7 @@ async function runChat(sender, req) {
     let text, rounds, stopped;
     const common = { prompt, ws, messages, defs, tools, out, send, checkBudget, signal: controller.signal, acct };
     if (pick.provider === 'hybrid') {
-      ({ text, rounds, stopped } = await song1({ ...common, s, mode, question: lastQuestion(req.history) }));
+      ({ text, rounds, stopped } = await autoRun({ ...common, s, mode, question: lastQuestion(req.history) }));
     } else {
       ({ text, rounds, stopped } = await agentLoop({ ...common, pick }));
     }
@@ -1426,11 +1456,16 @@ function init(context) {
   // project index and the conversation in full (and writes them to its cache).
   ipcMain.handle('ai:switch-cost', async (event, req) => {
     if (!fromServer(event) || !req || !/^[0-9a-f]{24}$/.test(String(req.projectId))) return null;
-    let pick = choices(settings(), { hybrid: true }).find((c) => c.id === req.choiceId);
+    let pick = choices(settings(), { hybrid: true }).find((c) => c.id === (req.choiceId === 'hybrid:song-1' ? 'hybrid:auto' : req.choiceId));
     if (!pick) return null;
     if (FREE.has(pick.provider)) return { paid: false };
-    // song-1 pays only when it hands the question to Claude.
-    if (pick.provider === 'hybrid') pick = { ...pick, model: SONG1_PAID, label: `${pick.label}; when it hands a question to ${SONG1_PAID}` };
+    // Auto pays only when it hands a question to a Claude API model; quoted
+    // for the largest size it may use.
+    if (pick.provider === 'hybrid') {
+      const top = autoPick(autoParts(), 5);
+      if (!top || top.provider !== 'claude') return { paid: false };
+      pick = { ...pick, model: top.model, label: `${pick.label}; when it hands a question to ${top.model}` };
+    }
     let indexChars = 0;
     try {
       const p = projectIndex.stateFor(ctx.getConfig().current, String(req.projectId));

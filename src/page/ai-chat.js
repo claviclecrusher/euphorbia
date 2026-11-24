@@ -442,7 +442,7 @@
   // Estimated from the token usage this app saw; other apps using the key are not included.
   async function updateSpend() {
     let provider = (model.value || '').split(':')[0];
-    if (provider === 'hybrid') provider = 'claude'; // song-1 pays only for Claude
+    if (provider === 'hybrid') provider = 'claude'; // Auto pays only for Claude API models
     if (!provider) {
       spend.textContent = '';
       return;
@@ -984,7 +984,7 @@
       list.scrollTop = list.scrollHeight;
       setStatus('Paused: waiting for your answer.');
     } else if (ev.type === 'reset') {
-      // song-1 replaced the local draft: the stronger model's answer follows.
+      // Auto replaced the local draft: the stronger model's answer follows.
       active.text = '';
       active.body.textContent = '';
       setStatus(ev.text);
