@@ -37,6 +37,8 @@ On Ubuntu 24.04+ the AppImage needs `libfuse2` and may need `--no-sandbox`.
   or drag a tab to split the editor top/bottom.
 - **Candidates** (`Ctrl+Shift+I`) — keep alternative versions of some lines and
   switch between them; stored as comments in the `.tex` file.
+- **Right-click in the editor**: Candidates, Edit with Diff, AI Edit, Add to AI Chat
+  and Go to Code Location in PDF (`Ctrl+Shift+P`).
 - **Euphorbia code view** (`Ctrl+Shift+U`, or `%` on the editor toolbar) — show
   candidates and edits as the plain comments they are in the source, and back.
 - **Edits with diff** (`Ctrl+Shift+K`) — edit a copy of some lines next to the

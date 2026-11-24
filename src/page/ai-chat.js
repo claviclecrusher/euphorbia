@@ -211,6 +211,16 @@
     input.focus();
   }
 
+  // Right-click menu: add the selected lines to the chat (as Ctrl+L does).
+  window.__euphorbiaQuote = () => {
+    const v = window.overleaf && window.overleaf.unstable && window.overleaf.unstable.store.get('editor.view');
+    if (!v) return false;
+    const ref = refFromSelection(v);
+    if (PANE === 1) addRef(ref);
+    else ai.sendRef(ref);
+    return true;
+  };
+
   window.addEventListener('UNSTABLE_editor:extensions', (event) => {
     try {
       CM = event.detail.CodeMirror;

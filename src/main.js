@@ -284,8 +284,31 @@ function attachCommonHandlers(win, contents) {
     wc.executeJavaScript(projectCopy.PAGE_SCRIPT).catch(() => {});
   });
 
-  wc.on('context-menu', (_e, params) => {
+  wc.on('context-menu', async (_e, params) => {
     const items = [];
+    // In the code editor: Euphorbia's actions for the selection or cursor.
+    let inEditor = { editor: false, pdf: false };
+    if (params.isEditable && isServerUrl(wc.getURL())) {
+      try {
+        inEditor = await wc.executeJavaScript(
+          `({ editor: !!(document.activeElement && document.activeElement.closest('.cm-editor') && window.__euphorbiaActions), pdf: !!(window.__euphorbiaActions && window.__euphorbiaActions.canGotoPdf()) })`
+        );
+      } catch {
+        /* not the editor */
+      }
+    }
+    if (inEditor.editor) {
+      const act = (code) => () => wc.executeJavaScript(code).catch(() => {});
+      const sel = !!params.selectionText;
+      items.push(
+        { label: 'Candidates', accelerator: 'CmdOrCtrl+Shift+I', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.candidates()') },
+        { label: 'Edit with Diff', accelerator: 'CmdOrCtrl+Shift+K', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.diffEdit()') },
+        { label: 'AI Edit…', accelerator: 'CmdOrCtrl+K', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.aiEdit()') },
+        { label: 'Add to AI Chat', accelerator: 'CmdOrCtrl+L', registerAccelerator: false, click: act('window.__euphorbiaQuote && window.__euphorbiaQuote()') },
+        { type: 'separator' },
+        { label: 'Go to Code Location in PDF', accelerator: 'CmdOrCtrl+Shift+P', registerAccelerator: false, enabled: inEditor.pdf, click: act('window.__euphorbiaActions.gotoPdf()') }
+      );
+    }
     for (const word of params.dictionarySuggestions || []) {
       items.push({ label: word, click: () => wc.replaceMisspelling(word) });
     }

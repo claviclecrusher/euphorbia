@@ -1108,6 +1108,35 @@
   }
   window.__olDesktopEdits = { insertEdit, addProposal, revealProposal };
 
+  // Go to code location in PDF: Overleaf's own button between the editor and
+  // the PDF, for the cursor position (the start of the selection).
+  // Overleaf picks up the cursor position a moment after it moves, so after
+  // collapsing a selection wait before pressing its button.
+  function gotoPdf(view) {
+    const v = view || storeView();
+    const btn = [...document.querySelectorAll('.synctex-control')].find((b) => /arrow_right_alt/.test(b.textContent) || /code location in PDF/i.test(b.getAttribute('aria-label') || ''));
+    if (!btn || btn.disabled) return false;
+    let wait = 300;
+    if (v) {
+      const sel = v.state.selection.main;
+      if (!sel.empty) {
+        v.dispatch({ selection: { anchor: sel.from } });
+        wait = 400;
+      }
+    }
+    setTimeout(() => btn.click(), wait);
+    return true;
+  }
+
+  // Actions for the editor's right-click menu (run by the app).
+  window.__euphorbiaActions = {
+    candidates: () => { const v = storeView(); return v ? createOrAdd(v) : false; },
+    diffEdit: () => { const v = storeView(); return v ? createEdit(v) : false; },
+    aiEdit: () => { const v = storeView(); return v ? aiEdit(v) : false; },
+    gotoPdf: () => gotoPdf(),
+    canGotoPdf: () => !!document.querySelector('.synctex-control'),
+  };
+
   // ------------------------------------------------------------ editor ---
 
   window.addEventListener('UNSTABLE_editor:extensions', (event) => {
@@ -1640,6 +1669,7 @@
           { key: 'Mod-Shift-i', run: createOrAdd, preventDefault: true },
           { key: 'Mod-Shift-k', run: createEdit, preventDefault: true },
           { key: 'Mod-Shift-u', run: toggleRaw, preventDefault: true },
+          { key: 'Mod-Shift-p', run: (v) => (gotoPdf(v), true), preventDefault: true },
           { key: 'Mod-k', run: aiEdit, preventDefault: true },
         ])
       ),
