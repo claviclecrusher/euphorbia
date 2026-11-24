@@ -94,7 +94,16 @@ Each user message starts with its mode:
   find must be copied exactly from what read_unit or read_file returned (whole lines, without line
   numbers, unique in the file). The app checks each edit at once; if it rejects one, read again
   and fix it. Keep edits small. Never edit .bib files (read-only; tell the user what to change
-  instead) or lines inside %%edit: / %%cand: blocks. Keep LaTeX commands, labels, citations and
+  instead), %%cand: blocks, or %%edit: blocks made by people. Your edits are written into the
+  files as suggested-edit blocks that the user accepts or rejects:
+    %%edit:begin by="AI (model)" at="..." kind="ai"
+    %- the old line(s), commented out
+    %%edit:new
+    the new text (this is what compiles)
+    %%edit:end
+  While such a block is waiting, revise the suggestion by editing its new text (find text from
+  between %%edit:new and %%edit:end); never touch its markers or %- lines. When the user reports
+  errors, call read_compile_log first: the compile includes the new text of waiting blocks. Keep LaTeX commands, labels, citations and
   math intact unless asked otherwise. Then say in one or two sentences what you changed; the user
   reviews every edit and accepts or rejects it.
 - [Mode: read] Read what you need and answer. Do not change anything. If the user asks for a
@@ -477,6 +486,11 @@ const READ_TOOLS = [
     },
   },
   {
+    name: 'read_compile_log',
+    description: 'Compile the project on the server (as the Recompile button does, with the new text of waiting suggested-edit blocks) and read the result: status, errors with file:line and context, and warnings. Use it when the user mentions errors, warnings or a broken PDF, or to check what fails.',
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
     name: 'read_history',
     description: 'Read the full text of an earlier part of this conversation that is only shown summarized, e.g. "h2".',
     input_schema: {
@@ -573,6 +587,7 @@ function toolStatus(name, input) {
   if (name === 'search') return `Searching for “${String(i.query || '').slice(0, 40)}”…`;
   if (name === 'find_related') return 'Looking for related parts…';
   if (name === 'expand') return `Opening ${i.id || 'the index'}…`;
+  if (name === 'read_compile_log') return 'Compiling and reading the log…';
   if (name === 'read_history') return `Re-reading earlier messages (${i.id || ''})…`;
   if (name === 'propose_edit') return `Checking an edit to ${i.file || 'a file'}…`;
   if (name === 'mark') return `Marking ${i.file || ''}:${i.start_line || ''}…`;
@@ -1179,6 +1194,7 @@ async function runChat(sender, req) {
     const prompt = chatPrompt();
     const tools = {
       ...ws.tools,
+      read_compile_log: () => projectIndex.compileLog(p).catch((err) => `Could not compile: ${err.message}`),
       read_history: ({ id: hid }) => {
         const b = blocks.find((x) => x.id === hid);
         return b ? b.text : `No history block ${hid}. Blocks: ${blocks.map((x) => x.id).join(', ') || 'none'}`;
@@ -1443,7 +1459,7 @@ function init(context) {
       const p = projectIndex.stateFor(ctx.getConfig().current, String(projectId));
       await projectIndex.refresh(p, { maxAge: 15000 });
       const files = p.files
-        .map((f) => ({ path: f.path, count: (f.text.match(/^\s*%%edit:begin\b/gm) || []).length }))
+        .map((f) => ({ path: f.path, count: (f.text.match(/^\s*%%edit:begin\b/gm) || []).length, ai: (f.text.match(/^\s*%%edit:begin\b.*\bkind="ai"/gm) || []).length }))
         .filter((f) => f.count > 0);
       return { ok: true, files };
     } catch (err) {

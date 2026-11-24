@@ -355,13 +355,21 @@ function unitAtLine(p, f, line) {
 }
 
 // Line ranges of edit and candidates blocks in a text (1-based, inclusive).
+// Blocks as [beginLine, endLine, aiNewFrom, aiNewTo]: for an AI edit block
+// (kind="ai") the lines of its new text, which the AI may still revise.
 function blockRanges(text) {
   const out = [];
   let open = null;
+  let ai = false;
+  let newAt = 0;
   text.split('\n').forEach((l, i) => {
-    if (/^\s*%%(edit|cand):begin\b/.test(l)) open = i + 1;
+    if (/^\s*%%(edit|cand):begin\b/.test(l)) {
+      open = i + 1;
+      ai = /^\s*%%edit:begin\b.*\bkind="ai"/.test(l);
+      newAt = 0;
+    } else if (open && /^\s*%%edit:new\s*$/.test(l)) newAt = i + 1;
     else if (open && /^\s*%%(edit|cand):end\s*$/.test(l)) {
-      out.push([open, i + 1]);
+      out.push(ai && newAt ? [open, i + 1, newAt + 1, i] : [open, i + 1, 0, -1]);
       open = null;
     }
   });
@@ -474,8 +482,15 @@ function workspace(p, openDoc, { embed = null } = {}) {
       }
       const lineFrom = text.slice(0, at).split('\n').length;
       const lineTo = lineFrom + text.slice(at, at + len).split('\n').length - 1;
-      if (blockRanges(text).some(([a, b]) => lineFrom <= b && lineTo >= a)) {
-        return { ok: false, error: 'Those lines are inside an edit or candidates block; leave them alone.' };
+      const hit = blockRanges(text).find(([a, b]) => lineFrom <= b && lineTo >= a);
+      // Inside the new text of an AI edit block: a revision of that suggestion.
+      if (hit && !(hit[2] && lineFrom >= hit[2] && lineTo <= hit[3])) {
+        return {
+          ok: false,
+          error: hit[2]
+            ? 'That touches the markers or the old (%-) lines of a suggested edit. To revise the suggestion, edit only its new text, between %%edit:new and %%edit:end.'
+            : 'Those lines are inside an edit block made by a person or a candidates block; leave them alone.',
+        };
       }
       if (accepted.some((s) => s.file === f.path && lineFrom <= s.to && lineTo >= s.from)) {
         return { ok: false, error: 'This overlaps an edit you already proposed in this answer; combine them into one edit.' };
@@ -672,4 +687,82 @@ function stats(p) {
   return { files: p.files.length, chars: p.files.reduce((n, f) => n + f.text.length, 0), units, summarized, builtAt: p.builtAt, main: p.main };
 }
 
-module.exports = { stateFor, refresh, workspace, summarize, estimateTokens, stats, embedUnits, LIMITS };
+// ------------------------------------------------------------ compile log ---
+
+// Compiles the project on the server (like Recompile; the server reuses its
+// previous run when nothing changed) and returns a short report of the log:
+// status, errors with their file:line and context, warnings, and the end of
+// the log when nothing else was found.
+async function compileLog(p) {
+  const token = await csrfToken(p.serverUrl);
+  if (!token) return 'Could not compile: not signed in to the server.';
+  const res = await session.defaultSession.fetch(`${p.serverUrl}/project/${p.projectId}/compile?auto_compile=true`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token, Accept: 'application/json' },
+    body: JSON.stringify({ check: 'silent', draft: false, incrementalCompilesEnabled: true, stopOnFirstError: false }),
+  });
+  if (!res.ok) return `Could not compile (HTTP ${res.status}).`;
+  const data = await res.json();
+  const logFile = (data.outputFiles || []).find((f) => f.path === 'output.log');
+  const head = `Compile status: ${data.status || 'unknown'}.`;
+  if (!logFile) return `${head} No log was produced.`;
+  const q = data.clsiServerId ? `?clsiserverid=${encodeURIComponent(data.clsiServerId)}` : '';
+  const logRes = await session.defaultSession.fetch(`${p.serverUrl}${logFile.url}${q}`, { credentials: 'include' });
+  if (!logRes.ok) return `${head} The log could not be read (HTTP ${logRes.status}).`;
+  return head + '\n' + summarizeLog(await logRes.text());
+}
+
+// Errors ("! ..." with the l.N line and the file being read), file:line:
+// messages, and LaTeX/package warnings with their input line.
+function summarizeLog(log) {
+  const lines = log.replace(/\r\n/g, '\n').split('\n');
+  const errors = [];
+  const warnings = [];
+  // The project file being read: the most recent "(./name.tex" before the
+  // error (project files are opened with a relative path, TeX's own with an
+  // absolute one).
+  const fileAt = (i) => {
+    for (let k = i; k >= 0; k--) {
+      const m = lines[k].match(/\(\.\/[^()\s]+\.(?:tex|bib|bbl|sty|cls)/g);
+      if (m) return m[m.length - 1].slice(3);
+    }
+    return '';
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const fle = l.match(/^(?:\.\/)?([^:\s]+\.\w+):(\d+): (.*)/);
+    if (fle) {
+      errors.push(`${fle[1]}:${fle[2]}: ${fle[3]}`);
+      continue;
+    }
+    if (l.startsWith('! ')) {
+      const ctx = [l];
+      let line = '';
+      for (let k = i + 1; k < Math.min(lines.length, i + 8); k++) {
+        const m = lines[k].match(/^l\.(\d+) ?(.*)/);
+        if (m) {
+          line = m[1];
+          ctx.push(lines[k]);
+          break;
+        }
+        if (lines[k].trim()) ctx.push(lines[k]);
+      }
+      const file = fileAt(i);
+      errors.push(`${file || '?'}${line ? `:${line}` : ''}: ${ctx.join(' / ').slice(0, 400)}`);
+      continue;
+    }
+    if (/^(LaTeX|Package \S+|Class \S+) Warning:/.test(l)) {
+      let w = l;
+      for (let k = i + 1; k < Math.min(lines.length, i + 4) && lines[k].trim() && !/Warning:/.test(lines[k]); k++) w += ' ' + lines[k].trim();
+      warnings.push(w.replace(/\s+/g, ' ').slice(0, 300));
+    }
+  }
+  const out = [];
+  out.push(errors.length ? `Errors (${errors.length}):\n${errors.slice(0, 30).join('\n')}` : 'Errors: none.');
+  if (warnings.length) out.push(`Warnings (${warnings.length}):\n${[...new Set(warnings)].slice(0, 30).join('\n')}`);
+  if (!errors.length && /Emergency stop|Fatal error|no output PDF/i.test(log)) out.push(`End of the log:\n${lines.slice(-40).join('\n')}`);
+  return out.join('\n\n');
+}
+
+module.exports = { stateFor, refresh, workspace, summarize, estimateTokens, stats, embedUnits, compileLog, summarizeLog, LIMITS };
