@@ -477,6 +477,11 @@ const READ_TOOLS = [
     },
   },
   {
+    name: 'read_compile_log',
+    description: 'Compile the project on the server (as the Recompile button does; edits you propose are not in it until the user accepts them) and read the result: status, errors with file:line and context, and warnings. Use it when the user mentions errors, warnings or a broken PDF, or to check what fails.',
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
     name: 'read_history',
     description: 'Read the full text of an earlier part of this conversation that is only shown summarized, e.g. "h2".',
     input_schema: {
@@ -573,6 +578,7 @@ function toolStatus(name, input) {
   if (name === 'search') return `Searching for “${String(i.query || '').slice(0, 40)}”…`;
   if (name === 'find_related') return 'Looking for related parts…';
   if (name === 'expand') return `Opening ${i.id || 'the index'}…`;
+  if (name === 'read_compile_log') return 'Compiling and reading the log…';
   if (name === 'read_history') return `Re-reading earlier messages (${i.id || ''})…`;
   if (name === 'propose_edit') return `Checking an edit to ${i.file || 'a file'}…`;
   if (name === 'mark') return `Marking ${i.file || ''}:${i.start_line || ''}…`;
@@ -1179,6 +1185,7 @@ async function runChat(sender, req) {
     const prompt = chatPrompt();
     const tools = {
       ...ws.tools,
+      read_compile_log: () => projectIndex.compileLog(p).catch((err) => `Could not compile: ${err.message}`),
       read_history: ({ id: hid }) => {
         const b = blocks.find((x) => x.id === hid);
         return b ? b.text : `No history block ${hid}. Blocks: ${blocks.map((x) => x.id).join(', ') || 'none'}`;

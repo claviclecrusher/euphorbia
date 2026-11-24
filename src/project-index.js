@@ -672,4 +672,82 @@ function stats(p) {
   return { files: p.files.length, chars: p.files.reduce((n, f) => n + f.text.length, 0), units, summarized, builtAt: p.builtAt, main: p.main };
 }
 
-module.exports = { stateFor, refresh, workspace, summarize, estimateTokens, stats, embedUnits, LIMITS };
+// ------------------------------------------------------------ compile log ---
+
+// Compiles the project on the server (like Recompile; the server reuses its
+// previous run when nothing changed) and returns a short report of the log:
+// status, errors with their file:line and context, warnings, and the end of
+// the log when nothing else was found.
+async function compileLog(p) {
+  const token = await csrfToken(p.serverUrl);
+  if (!token) return 'Could not compile: not signed in to the server.';
+  const res = await session.defaultSession.fetch(`${p.serverUrl}/project/${p.projectId}/compile?auto_compile=true`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token, Accept: 'application/json' },
+    body: JSON.stringify({ check: 'silent', draft: false, incrementalCompilesEnabled: true, stopOnFirstError: false }),
+  });
+  if (!res.ok) return `Could not compile (HTTP ${res.status}).`;
+  const data = await res.json();
+  const logFile = (data.outputFiles || []).find((f) => f.path === 'output.log');
+  const head = `Compile status: ${data.status || 'unknown'}.`;
+  if (!logFile) return `${head} No log was produced.`;
+  const q = data.clsiServerId ? `?clsiserverid=${encodeURIComponent(data.clsiServerId)}` : '';
+  const logRes = await session.defaultSession.fetch(`${p.serverUrl}${logFile.url}${q}`, { credentials: 'include' });
+  if (!logRes.ok) return `${head} The log could not be read (HTTP ${logRes.status}).`;
+  return head + '\n' + summarizeLog(await logRes.text());
+}
+
+// Errors ("! ..." with the l.N line and the file being read), file:line:
+// messages, and LaTeX/package warnings with their input line.
+function summarizeLog(log) {
+  const lines = log.replace(/\r\n/g, '\n').split('\n');
+  const errors = [];
+  const warnings = [];
+  // The project file being read: the most recent "(./name.tex" before the
+  // error (project files are opened with a relative path, TeX's own with an
+  // absolute one).
+  const fileAt = (i) => {
+    for (let k = i; k >= 0; k--) {
+      const m = lines[k].match(/\(\.\/[^()\s]+\.(?:tex|bib|bbl|sty|cls)/g);
+      if (m) return m[m.length - 1].slice(3);
+    }
+    return '';
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const fle = l.match(/^(?:\.\/)?([^:\s]+\.\w+):(\d+): (.*)/);
+    if (fle) {
+      errors.push(`${fle[1]}:${fle[2]}: ${fle[3]}`);
+      continue;
+    }
+    if (l.startsWith('! ')) {
+      const ctx = [l];
+      let line = '';
+      for (let k = i + 1; k < Math.min(lines.length, i + 8); k++) {
+        const m = lines[k].match(/^l\.(\d+) ?(.*)/);
+        if (m) {
+          line = m[1];
+          ctx.push(lines[k]);
+          break;
+        }
+        if (lines[k].trim()) ctx.push(lines[k]);
+      }
+      const file = fileAt(i);
+      errors.push(`${file || '?'}${line ? `:${line}` : ''}: ${ctx.join(' / ').slice(0, 400)}`);
+      continue;
+    }
+    if (/^(LaTeX|Package \S+|Class \S+) Warning:/.test(l)) {
+      let w = l;
+      for (let k = i + 1; k < Math.min(lines.length, i + 4) && lines[k].trim() && !/Warning:/.test(lines[k]); k++) w += ' ' + lines[k].trim();
+      warnings.push(w.replace(/\s+/g, ' ').slice(0, 300));
+    }
+  }
+  const out = [];
+  out.push(errors.length ? `Errors (${errors.length}):\n${errors.slice(0, 30).join('\n')}` : 'Errors: none.');
+  if (warnings.length) out.push(`Warnings (${warnings.length}):\n${[...new Set(warnings)].slice(0, 30).join('\n')}`);
+  if (!errors.length && /Emergency stop|Fatal error|no output PDF/i.test(log)) out.push(`End of the log:\n${lines.slice(-40).join('\n')}`);
+  return out.join('\n\n');
+}
+
+module.exports = { stateFor, refresh, workspace, summarize, estimateTokens, stats, embedUnits, compileLog, summarizeLog, LIMITS };
