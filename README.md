@@ -28,7 +28,8 @@ On Ubuntu 24.04+ the AppImage needs `libfuse2` and may need `--no-sandbox`.
 
 ## Features
 
-- **Servers** — **Server** menu to add, remove and switch (`Ctrl+1`…`Ctrl+9`);
+- **Servers** — **Server** menu to add, edit (name, address, order), remove and
+  switch (`Ctrl+1`…`Ctrl+9`);
   sign-in is kept per server. Email/password sign-in only.
 - **Copy a project to another server** — **More → Make a copy to other server**
   (files only; no history or comments).
@@ -36,6 +37,10 @@ On Ubuntu 24.04+ the AppImage needs `libfuse2` and may need `--no-sandbox`.
   or drag a tab to split the editor top/bottom.
 - **Candidates** (`Ctrl+Shift+I`) — keep alternative versions of some lines and
   switch between them; stored as comments in the `.tex` file.
+- **Right-click in the editor**: Candidates, Edit with Diff, AI Edit, Add to AI Chat
+  and Go to Code Location in PDF (`Ctrl+Shift+P`).
+- **Euphorbia code view** (`Ctrl+Shift+U`, or `%` on the editor toolbar) — show
+  candidates and edits as the plain comments they are in the source, and back.
 - **Edits with diff** (`Ctrl+Shift+K`) — edit a copy of some lines next to the
   original, then **Accept** or **Reject**; shows who and when.
 - **Window theme** — **View → Window Theme**: System, Light or Dark.
@@ -54,7 +59,8 @@ is loaded when you open a project.
   and models (`connector-opus` …). No API cost; the subscription's limits apply.
   The Claude effort setting applies to it too.
 - **`Ctrl+K`** rewrites the selected lines.
-- **Chat panel** (under the file outline) answers questions about the whole
+- **AI Chat** (its own tab in the left bar, after File tree, Search and Chat)
+  answers questions about the whole
   project. `Ctrl+L` adds the selected lines to the message. Modes:
   **Edit** (may change files), **Read** (answers only), **Search** (highlights
   related places in yellow).
@@ -63,6 +69,8 @@ is loaded when you open a project.
   uses it). Accept or Reject each, or use **Files**, **Accept all**, **Reject all**
   in the bar above the editor. Ask for more changes while they wait and the AI
   revises them; it can also compile and read the errors.
+- **Other projects**: the small ↗ in the chat header lets the AI read up to three
+  other projects on the same server in that conversation (read only).
 - `.bib` files are read-only for the AI. The AI can compile the project and read
   the errors and warnings (ask it about errors or a broken PDF).
 - A **writing style** for research papers is applied to text the AI writes

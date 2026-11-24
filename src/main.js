@@ -284,8 +284,31 @@ function attachCommonHandlers(win, contents) {
     wc.executeJavaScript(projectCopy.PAGE_SCRIPT).catch(() => {});
   });
 
-  wc.on('context-menu', (_e, params) => {
+  wc.on('context-menu', async (_e, params) => {
     const items = [];
+    // In the code editor: Euphorbia's actions for the selection or cursor.
+    let inEditor = { editor: false, pdf: false };
+    if (params.isEditable && isServerUrl(wc.getURL())) {
+      try {
+        inEditor = await wc.executeJavaScript(
+          `({ editor: !!(document.activeElement && document.activeElement.closest('.cm-editor') && window.__euphorbiaActions), pdf: !!(window.__euphorbiaActions && window.__euphorbiaActions.canGotoPdf()) })`
+        );
+      } catch {
+        /* not the editor */
+      }
+    }
+    if (inEditor.editor) {
+      const act = (code) => () => wc.executeJavaScript(code).catch(() => {});
+      const sel = !!params.selectionText;
+      items.push(
+        { label: 'Candidates', accelerator: 'CmdOrCtrl+Shift+I', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.candidates()') },
+        { label: 'Edit with Diff', accelerator: 'CmdOrCtrl+Shift+K', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.diffEdit()') },
+        { label: 'AI Edit…', accelerator: 'CmdOrCtrl+K', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.aiEdit()') },
+        { label: 'Add to AI Chat', accelerator: 'CmdOrCtrl+L', registerAccelerator: false, click: act('window.__euphorbiaQuote && window.__euphorbiaQuote()') },
+        { type: 'separator' },
+        { label: 'Go to Code Location in PDF', accelerator: 'CmdOrCtrl+Shift+P', registerAccelerator: false, enabled: inEditor.pdf, click: act('window.__euphorbiaActions.gotoPdf()') }
+      );
+    }
     for (const word of params.dictionarySuggestions || []) {
       items.push({ label: word, click: () => wc.replaceMisspelling(word) });
     }
@@ -447,6 +470,78 @@ function showSetup() {
   });
 }
 
+let serversWindow = null;
+
+function showServers() {
+  if (serversWindow) {
+    serversWindow.focus();
+    return;
+  }
+  serversWindow = new BrowserWindow({
+    icon: APP_ICON,
+    width: 680,
+    height: 480,
+    minWidth: 520,
+    minimizable: false,
+    maximizable: false,
+    parent: mainWindow || undefined,
+    modal: !!mainWindow,
+    title: 'Edit Servers',
+    autoHideMenuBar: true,
+    webPreferences: { ...webPreferences, preload: path.join(__dirname, 'servers-preload.js') },
+  });
+  serversWindow.setMenuBarVisibility(false);
+  serversWindow.loadFile(path.join(__dirname, 'servers.html'));
+  serversWindow.on('closed', () => {
+    serversWindow = null;
+  });
+}
+
+const fromServersWindow = (event) => serversWindow && event.sender === serversWindow.webContents;
+
+ipcMain.handle('servers:get', (event) => (fromServersWindow(event) ? { servers: config.servers, current: config.current } : null));
+
+// items: [{ orig, name, url }] in the new order. Changed addresses are checked
+// like a new server; removed ones drop out of the list.
+ipcMain.handle('servers:save', async (event, items) => {
+  if (!fromServersWindow(event) || !Array.isArray(items) || !items.length) return { ok: false, error: 'Nothing to save.' };
+  const next = [];
+  let current = config.current;
+  for (const it of items.slice(0, 50)) {
+    const orig = String((it && it.orig) || '');
+    const typed = String((it && it.url) || '').trim();
+    let url = orig;
+    if (typed !== orig) {
+      try {
+        const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(typed);
+        url = null;
+        if (typed && !hasScheme) {
+          try {
+            url = await probeServer(normalizeServerUrl('https://' + typed), 5000);
+          } catch {
+            /* try http below */
+          }
+        }
+        if (!url) url = await probeServer(normalizeServerUrl(typed));
+      } catch (err) {
+        return { ok: false, error: `${typed || '(empty address)'}: ${err.message || err}` };
+      }
+    }
+    if (next.some((x) => x.url === url)) return { ok: false, error: `${url} is in the list twice.` };
+    const name = String((it && it.name) || '').trim().slice(0, 40) || defaultName(url);
+    next.push({ name, url });
+    if (orig === config.current) current = url;
+  }
+  if (!next.some((x) => x.url === current)) current = next[0].url;
+  const switching = current !== config.current;
+  saveConfig({ servers: next });
+  if (switching) switchServer(current);
+  else buildMenu();
+  const win = serversWindow;
+  if (win) setImmediate(() => win.destroy());
+  return { ok: true };
+});
+
 // -------------------------------------------------------------------- ipc ---
 
 // Scripts the page preload injects before the page's own scripts run.
@@ -559,6 +654,7 @@ function buildMenu() {
         ...serverItems,
         ...(serverItems.length ? [{ type: 'separator' }] : []),
         { label: 'Add Server…', click: showSetup },
+        { label: 'Edit Servers…', click: showServers },
         { label: 'Remove Current Server…', enabled: !!config.current, click: removeCurrentServer },
       ],
     },

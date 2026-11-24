@@ -163,6 +163,7 @@
     const conv = currentConv();
     messages = conv ? conv.messages : [];
     showingList = false;
+    if (typeof linkedRow !== 'undefined') renderLinked();
     try {
       localStorage.setItem(KEY, JSON.stringify({ convs, current: currentId }));
     } catch {
@@ -171,6 +172,17 @@
   }
   let showingList = false;
   let pendingRefs = [];
+  // Other projects this conversation refers to: [{ id, name }] (kept on the
+  // conversation; for a new chat until its first message).
+  let pendingLinked = [];
+  const linkedOf = () => (currentConv() ? currentConv().linked || [] : pendingLinked);
+  const setLinked = (list) => {
+    if (currentConv()) {
+      currentConv().linked = list;
+      save();
+    } else pendingLinked = list;
+    renderLinked();
+  };
   let active = null; // { id, el, text }
 
   // -------------------------------------------------------------- Ctrl+L ---
@@ -195,9 +207,21 @@
       pendingRefs.push(ref);
     }
     setCollapsed(false);
+    // Ctrl+L / Add to AI Chat brings the AI Chat tab up.
+    if (!(aiOn && panelOpen())) railTab.click();
     renderRefs();
     input.focus();
   }
+
+  // Right-click menu: add the selected lines to the chat (as Ctrl+L does).
+  window.__euphorbiaQuote = () => {
+    const v = window.overleaf && window.overleaf.unstable && window.overleaf.unstable.store.get('editor.view');
+    if (!v) return false;
+    const ref = refFromSelection(v);
+    if (PANE === 1) addRef(ref);
+    else ai.sendRef(ref);
+    return true;
+  };
 
   window.addEventListener('UNSTABLE_editor:extensions', (event) => {
     try {
@@ -310,7 +334,69 @@
   history.title = 'Conversations';
   const newChat = el('button', 'ol-chat-icon', '+');
   newChat.title = 'New chat';
-  header.append(toggle, title, reindex, history, newChat);
+  const linkBtn = el('button', 'ol-chat-icon ol-chat-link', '\u2197');
+  linkBtn.title = 'Refer to other projects in this conversation (read only)';
+  header.append(toggle, title, linkBtn, reindex, history, newChat);
+  const linkedRow = el('div', 'ol-chat-linked');
+  const linkMenu = el('div', 'ol-chat-linkmenu');
+  linkMenu.hidden = true;
+
+  function renderLinked() {
+    linkedRow.textContent = '';
+    const list = linkedOf();
+    linkedRow.hidden = !list.length;
+    if (!list.length) return;
+    linkedRow.appendChild(el('span', 'ol-chat-linked-label', 'Also reading:'));
+    for (const r of list) {
+      const chipEl = el('span', 'ol-chat-ref');
+      chipEl.appendChild(el('span', 'ol-chat-linked-name', r.name || r.id));
+      const x = el('button', 'ol-chat-ref-x', '\u00d7');
+      x.type = 'button';
+      x.title = 'Stop referring to this project';
+      x.addEventListener('click', () => setLinked(linkedOf().filter((y) => y.id !== r.id)));
+      chipEl.appendChild(x);
+      linkedRow.appendChild(chipEl);
+    }
+  }
+
+  async function openLinkMenu() {
+    linkMenu.textContent = 'Loading projects\u2026';
+    linkMenu.hidden = false;
+    if (linkMenu.parentElement !== document.body) document.body.appendChild(linkMenu);
+    const r = linkBtn.getBoundingClientRect();
+    linkMenu.style.top = `${r.bottom + 4}px`;
+    linkMenu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 330))}px`;
+    const projects = ((await ai.listProjects()) || []).filter((x) => x.id !== projectId);
+    linkMenu.textContent = '';
+    linkMenu.appendChild(el('div', 'ol-chat-linkmenu-head', 'Refer to other projects (read only, up to 3)'));
+    if (!projects.length) linkMenu.appendChild(el('div', 'ol-chat-linkmenu-empty', 'No other projects on this server.'));
+    for (const p of projects) {
+      const row = el('label', 'ol-chat-linkmenu-item');
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = linkedOf().some((y) => y.id === p.id);
+      box.addEventListener('change', () => {
+        let list = linkedOf().filter((y) => y.id !== p.id);
+        if (box.checked) {
+          if (list.length >= 3) {
+            box.checked = false;
+            return;
+          }
+          list = [...list, { id: p.id, name: p.name }];
+        }
+        setLinked(list);
+      });
+      row.append(box, el('span', '', p.name));
+      linkMenu.appendChild(row);
+    }
+  }
+  linkBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (linkMenu.hidden) openLinkMenu();
+    else linkMenu.hidden = true;
+  });
+  linkMenu.addEventListener('mousedown', (e) => e.stopPropagation());
+  window.addEventListener('mousedown', () => (linkMenu.hidden = true));
   const indexBar = el('div', 'ol-chat-index');
   const list = el('div', 'ol-chat-list');
   const status = el('div', 'ol-chat-status');
@@ -390,7 +476,8 @@
   new ResizeObserver(fitSpend).observe(actions);
   new MutationObserver(fitSpend).observe(spend, { childList: true, characterData: true, subtree: true });
   composer.append(refsRow, input, actions);
-  panel.append(handle, header, indexBar, list, status, composer);
+  panel.append(handle, header, linkedRow, indexBar, list, status, composer);
+  renderLinked();
   for (const b of panel.querySelectorAll('button')) b.type = 'button';
 
   const HEIGHT_KEY = 'ol-desktop-chat-height';
@@ -398,6 +485,7 @@
   let collapsed = localStorage.getItem('ol-desktop-chat-collapsed') === '1';
 
   function setCollapsed(c) {
+    if (panel.classList.contains('in-rail')) c = false; // a tab of its own: never folded
     collapsed = c;
     panel.classList.toggle('collapsed', c);
     panel.style.height = c ? '' : `${height}px`;
@@ -466,8 +554,10 @@
     if (active) return;
     openConv(null);
     pendingRefs = [];
+    pendingLinked = [];
     render();
     renderRefs();
+    renderLinked();
     setStatus('');
     input.focus();
   });
@@ -800,7 +890,8 @@
       return;
     }
     if (!currentConv()) {
-      const conv = { id: newId(), title: text.replace(/\s+/g, ' ').slice(0, 60), updatedAt: Date.now(), messages: [] };
+      const conv = { id: newId(), title: text.replace(/\s+/g, ' ').slice(0, 60), updatedAt: Date.now(), messages: [], linked: pendingLinked };
+      pendingLinked = [];
       convs.unshift(conv);
       currentId = conv.id;
       messages = conv.messages;
@@ -827,6 +918,7 @@
       projectId,
       history: messages.map((mm) => ({ role: mm.role, content: mm.content, refs: mm.refs, mode: mm.mode, proposals: mm.proposals, hits: mm.hits })),
       mode,
+      linked: linkedOf(),
       openDoc: v ? { path: currentPath(), text: v.state.doc.toString() } : null,
     });
   }
@@ -1050,23 +1142,111 @@
 
   // ------------------------------------------------------------ mount ---
 
-  // Below the File tree / File outline group, in the same column.
+  // A tab of its own in Overleaf's left rail (after File tree, Search, Chat).
+  // While it is on, the rail panel shows the AI chat over the selected tab's
+  // content; clicking any other tab turns it off.
+  const RAIL_KEY = 'ol-desktop-ai-tab';
+  let aiOn = localStorage.getItem(RAIL_KEY) === '1';
+  const pane = el('div', 'ol-ai-pane');
+  const railTab = el('button', 'ide-rail-tab-link nav-link ol-ai-rail-tab');
+  railTab.type = 'button';
+  railTab.title = 'AI Chat';
+  railTab.setAttribute('aria-label', 'AI Chat');
+  railTab.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2zm7 11l.95 2.55L22.5 16.5l-2.55.95L19 20l-.95-2.55-2.55-.95 2.55-.95L19 13zM6 15l.7 1.8 1.8.7-1.8.7L6 20l-.7-1.8-1.8-.7 1.8-.7L6 15z"/></svg>';
+
+  const railContent = () => document.querySelector('.ide-rail-content');
+  const panelOpen = () => {
+    const c = railContent();
+    return !!(c && c.offsetWidth > 40);
+  };
+  const nativeActive = () => document.querySelector('.ide-rail-tabs-wrapper .ide-rail-tab-link.active:not(.ol-ai-rail-tab)');
+
+  function showAi(on) {
+    aiOn = on;
+    localStorage.setItem(RAIL_KEY, on ? '1' : '0');
+    const c = railContent();
+    if (c) c.classList.toggle('ol-ai-on', on);
+    const rail = document.querySelector('.ide-rail');
+    if (rail) rail.classList.toggle('ol-ai-on-rail', on);
+    railTab.classList.toggle('active', on);
+    railTab.classList.toggle('open-rail', on);
+    if (on) {
+      render();
+      renderRefs();
+      loadModels();
+      setTimeout(() => input.focus(), 50);
+    }
+  }
+
+  railTab.addEventListener('click', () => {
+    if (aiOn && panelOpen()) {
+      // Close the panel like Overleaf's tabs do: its active tab toggles it.
+      showAi(false);
+      const t = nativeActive();
+      if (t) t.click();
+      return;
+    }
+    if (!panelOpen()) {
+      // Open the panel with Overleaf's own first tab, then cover it.
+      const first = document.querySelector('.ide-rail-tabs-wrapper .ide-rail-tab-link:not(.ol-ai-rail-tab)');
+      if (first && !first.classList.contains('active')) first.click();
+      else if (first) first.click();
+    }
+    showAi(true);
+  });
+
   function attach() {
-    const group = document.querySelector('.file-tree-outline-panel-group');
-    const host = group && group.parentElement;
-    if (!host) return;
-    if (panel.parentElement === host && group.nextElementSibling === panel) return;
-    host.classList.add('ol-chat-host');
-    group.classList.add('ol-chat-group');
-    group.after(panel);
-    setCollapsed(collapsed);
-    render();
-    renderRefs();
-    loadModels();
+    const wrapper = document.querySelector('.ide-rail-tabs-wrapper');
+    const content = railContent();
+    if (wrapper && railTab.parentElement !== wrapper) {
+      // Before the "more options" element at the end of the tab list.
+      const tabs = wrapper.querySelectorAll('.ide-rail-tab-link:not(.ol-ai-rail-tab)');
+      const lastTab = tabs[tabs.length - 1];
+      const after = lastTab ? lastTab.closest('.ide-rail-tabs-wrapper > *') : null;
+      if (after) after.after(railTab);
+      else wrapper.appendChild(railTab);
+      // Another tab turns the AI chat off. A click on the tab that is active
+      // underneath would close the panel in Overleaf: just show it instead.
+      wrapper.addEventListener('click', (e) => {
+        const t = e.target.closest('.ide-rail-tab-link');
+        if (!t || t === railTab || !aiOn) return;
+        if (t.classList.contains('active') && panelOpen()) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        showAi(false);
+      }, true);
+    }
+    if (content && pane.parentElement !== content) {
+      content.appendChild(pane);
+      content.classList.toggle('ol-ai-on', aiOn);
+    }
+    if (panel.parentElement !== pane) {
+      pane.appendChild(panel);
+      panel.classList.add('in-rail');
+      setCollapsed(false);
+      render();
+      renderRefs();
+      loadModels();
+    }
+    const rail = document.querySelector('.ide-rail');
+    if (rail) rail.classList.toggle('ol-ai-on-rail', aiOn);
+    railTab.classList.toggle('active', aiOn);
+    railTab.classList.toggle('open-rail', aiOn);
   }
 
   const style = el('style');
   style.textContent = `
+    .ide-rail-content { position: relative; }
+    .ol-ai-pane { display: none; position: absolute; inset: 0; z-index: 5; }
+    .ide-rail-content.ol-ai-on > .ide-rail-tab-content { visibility: hidden; }
+    .ide-rail-content.ol-ai-on > .ol-ai-pane { display: flex; flex-direction: column; }
+    .ol-ai-pane > .ol-chat { flex: 1 1 auto; height: auto !important; border-top: 0; }
+    .ol-chat.in-rail .ol-chat-handle, .ol-chat.in-rail .ol-chat-toggle { display: none; }
+    .ol-chat.in-rail .ol-chat-title { cursor: default; }
+    .ol-ai-rail-tab { display: flex; align-items: center; justify-content: center; border: 0; background: none; color: inherit; }
+    .ide-rail.ol-ai-on-rail .ide-rail-tab-link.active:not(.ol-ai-rail-tab) { background: transparent !important; }
+    .ide-rail.ol-ai-on-rail .ide-rail-tab-link.active:not(.ol-ai-rail-tab)::before { display: none !important; }
     .ol-chat-host { display: flex !important; flex-direction: column; }
     .ol-chat-host > .ol-chat-group { flex: 1 1 auto; min-height: 80px; }
     .ol-chat { flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0;
@@ -1113,6 +1293,18 @@
     .ol-chat-edit .ol-chat-ref-link { padding: 0; max-width: 100%; }
     .ol-chat-edit-state { font-size: 10px; opacity: .75; }
     .ol-chat-edit-count { font-weight: 600; }
+    .ol-chat-link { opacity: .55; }
+    .ol-chat-link:hover { opacity: 1; }
+    .ol-chat-linked { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 8px 4px; font-size: 11px; }
+    .ol-chat-linked[hidden] { display: none; }
+    .ol-chat-linked-label { opacity: .65; }
+    .ol-chat-linkmenu { position: fixed; z-index: 2147483000; width: 320px; max-height: 320px; overflow-y: auto; background: #fff; color: #1b222c;
+      border: 1px solid #c9ced6; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.25); padding: 4px 0; font: 12px system-ui, "Segoe UI", sans-serif; }
+    .ol-chat-linkmenu[hidden] { display: none; }
+    .ol-chat-linkmenu-head { padding: 4px 10px 6px; font-weight: 600; border-bottom: 1px solid #e4e7eb; margin-bottom: 2px; }
+    .ol-chat-linkmenu-empty { padding: 6px 10px; opacity: .7; }
+    .ol-chat-linkmenu-item { display: flex; align-items: center; gap: 8px; padding: 4px 10px; cursor: pointer; margin: 0; font-weight: normal; }
+    .ol-chat-linkmenu-item:hover { background: #f1f3f5; }
     .ol-chat-edit-files { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; }
     .ol-chat-edit-files .ol-chat-ref-link { padding: 0; }
     .ol-chat-edit-state.ok { color: #5fd38d; opacity: 1; }

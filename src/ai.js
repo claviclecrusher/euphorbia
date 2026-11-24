@@ -512,6 +512,40 @@ const READ_TOOLS = [
   },
 ];
 
+// Other projects the user chose to refer to in this conversation: read only.
+const REF_TOOLS = [
+  {
+    name: 'ref_read_unit',
+    description: 'Read units of a referenced project (see "Referenced projects"), by its project id and unit ids.',
+    input_schema: {
+      type: 'object',
+      properties: { project: { type: 'string' }, ids: { type: 'array', items: { type: 'string' } } },
+      required: ['project', 'ids'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'ref_read_file',
+    description: 'Read lines of a file in a referenced project.',
+    input_schema: {
+      type: 'object',
+      properties: { project: { type: 'string' }, path: { type: 'string' }, start_line: { type: 'integer' }, end_line: { type: 'integer' } },
+      required: ['project', 'path'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'ref_search',
+    description: 'Find lines containing a text (case-insensitive) in a referenced project.',
+    input_schema: {
+      type: 'object',
+      properties: { project: { type: 'string' }, query: { type: 'string' } },
+      required: ['project', 'query'],
+      additionalProperties: false,
+    },
+  },
+];
+
 const EDIT_TOOL = {
   name: 'propose_edit',
   description: 'Propose one change to a project file. The app checks it immediately (find must occur exactly once) and the user accepts or rejects it later.',
@@ -547,8 +581,8 @@ const MARK_TOOL = {
 const MAX_TOOL_ROUNDS = 10;
 
 // Tools offered in a mode. Edit gets propose_edit, search gets mark; read neither.
-function toolsFor(mode, hasRelated) {
-  const base = READ_TOOLS.filter((t) => t.name !== 'find_related' || hasRelated);
+function toolsFor(mode, hasRelated, hasRefs = false) {
+  const base = [...READ_TOOLS.filter((t) => t.name !== 'find_related' || hasRelated), ...(hasRefs ? REF_TOOLS : [])];
   if (mode === 'edit') return [...base, EDIT_TOOL];
   if (mode === 'search') return [...base, MARK_TOOL];
   return base;
@@ -598,6 +632,7 @@ function toolStatus(name, input) {
   if (name === 'find_related') return 'Looking for related parts…';
   if (name === 'expand') return `Opening ${i.id || 'the index'}…`;
   if (name === 'read_compile_log') return 'Compiling and reading the log…';
+  if (name.startsWith('ref_')) return 'Reading a referenced project…';
   if (name === 'read_history') return `Re-reading earlier messages (${i.id || ''})…`;
   if (name === 'propose_edit') return `Checking an edit to ${i.file || 'a file'}…`;
   if (name === 'mark') return `Marking ${i.file || ''}:${i.start_line || ''}…`;
@@ -1195,16 +1230,40 @@ async function runChat(sender, req) {
         /* optional */
       }
     }
+    // Referenced projects: their index goes with the newest message; ref_* tools read them.
+    const refs = [];
+    for (const r of (req.linked || []).slice(0, 3)) {
+      if (r.id === req.projectId) continue;
+      try {
+        send('status', { text: `Reading the referenced project ${r.name || r.id}…` });
+        const p2 = projectIndex.stateFor(ctx.getConfig().current, r.id);
+        await projectIndex.refresh(p2);
+        const ws2 = projectIndex.workspace(p2, null);
+        refs.push({ ...r, ws: ws2 });
+        extras.push(`Referenced project "${r.name}" (project id ${r.id}; read only, use ref_read_unit / ref_read_file / ref_search with this id; never propose edits to it). Its index:\n${ws2.index.slice(0, 20000)}`);
+      } catch (err) {
+        extras.push(`The referenced project "${r.name}" could not be read (${friendly(err)}).`);
+      }
+    }
     if (extras.length) {
       const last = messages[messages.length - 1];
       last.content = `${extras.join('\n\n')}\n\n${last.content}`;
     }
 
-    const defs = toolsFor(mode, ws.hasRelated);
+    const defs = toolsFor(mode, ws.hasRelated, refs.length > 0);
+    const refOf = (id) => refs.find((x) => x.id === String(id || ''));
+    const refTool = (fn) => (input) => {
+      const r = refOf(input.project);
+      if (!r) return `No referenced project ${input.project}. Referenced: ${refs.map((x) => `${x.id} (${x.name})`).join(', ') || 'none'}`;
+      return fn(r.ws, input);
+    };
     const prompt = chatPrompt();
     const tools = {
       ...ws.tools,
       read_compile_log: () => projectIndex.compileLog(p).catch((err) => `Could not compile: ${err.message}`),
+      ref_read_unit: refTool((w, i) => w.tools.read_unit({ ids: i.ids })),
+      ref_read_file: refTool((w, i) => w.tools.read_file({ path: i.path, start_line: i.start_line, end_line: i.end_line })),
+      ref_search: refTool((w, i) => w.tools.search({ query: i.query })),
       read_history: ({ id: hid }) => {
         const b = blocks.find((x) => x.id === hid);
         return b ? b.text : `No history block ${hid}. Blocks: ${blocks.map((x) => x.id).join(', ') || 'none'}`;
@@ -1414,10 +1473,22 @@ function init(context) {
       projectId: String(req.projectId),
       history: Array.isArray(req.history) ? req.history.slice(-200) : [],
       mode: str(req.mode, 10),
+      linked: Array.isArray(req.linked)
+        ? req.linked.filter((r) => r && /^[0-9a-f]{24}$/.test(String(r.id))).slice(0, 3).map((r) => ({ id: String(r.id), name: str(r.name, 200) }))
+        : [],
       openDoc: req.openDoc && typeof req.openDoc.text === 'string'
         ? { path: str(req.openDoc.path, 500), text: req.openDoc.text.slice(0, 2000000) }
         : null,
     });
+  });
+
+  ipcMain.handle('ai:list-projects', async (event) => {
+    if (!fromServer(event)) return [];
+    try {
+      return await projectIndex.listProjects(ctx.getConfig().current);
+    } catch {
+      return [];
+    }
   });
 
   ipcMain.on('ai:chat-cancel', (event, requestId) => {
