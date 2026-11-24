@@ -682,7 +682,76 @@
     if (e.key === 'Escape') fileMenu.hidden = true;
   });
 
-  topBar.append(topText, topFiles, topAccept, topReject);
+  // ‹ n/N ›: the AI edit at the cursor among all AI edits of the project
+  // (files in path order), and buttons to step through them across files.
+  const topNav = document.createElement('span');
+  topNav.className = 'ol-sugg-nav';
+  const topPrev = document.createElement('button');
+  topPrev.type = 'button';
+  topPrev.textContent = '\u2039';
+  topPrev.title = 'Previous AI edit';
+  const topPos = document.createElement('span');
+  topPos.className = 'ol-sugg-pos';
+  const topNext = document.createElement('button');
+  topNext.type = 'button';
+  topNext.textContent = '\u203a';
+  topNext.title = 'Next AI edit';
+  topNav.append(topPrev, topPos, topNext);
+  topNav.addEventListener('mousedown', (e) => e.preventDefault());
+
+  // AI blocks of the open file, the one at the cursor (or -1), and how many
+  // AI edits come before this file.
+  function aiPlace() {
+    const v = storeView();
+    const cur = currentReviewPath();
+    const blocks = v ? parseEdits(v.state.doc).filter((b) => b.ai) : [];
+    const head = v ? v.state.selection.main.head : 0;
+    const k = blocks.findIndex((b) => head >= b.from && head <= b.to);
+    let before = 0;
+    let total = 0;
+    for (const [path, n] of aiCounts()) {
+      total += n;
+      if (path < cur) before += n;
+    }
+    return { v, cur, blocks, head, k, before, total };
+  }
+
+  function showAiBlock(v, b) {
+    v.dispatch({ selection: { anchor: v.state.doc.line(Math.min(b.newLine + 1, v.state.doc.lines)).from }, scrollIntoView: true });
+    v.focus();
+  }
+
+  async function stepAi(delta) {
+    const { v, cur, blocks, head, k } = aiPlace();
+    if (v) {
+      let target = null;
+      if (k >= 0) target = blocks[k + delta] || null;
+      else if (delta > 0) target = blocks.find((b) => b.from > head) || null;
+      else target = blocks.slice().reverse().find((b) => b.to < head) || null;
+      if (target) return showAiBlock(v, target);
+    }
+    // Next or previous file with AI edits (wrapping around).
+    const files = Array.from(aiCounts().keys()).filter((f) => f !== cur).sort();
+    if (!files.length || !nav()) {
+      if (v && blocks.length) showAiBlock(v, delta > 0 ? blocks[0] : blocks[blocks.length - 1]);
+      return;
+    }
+    const to = delta > 0 ? files.find((f) => f > cur) || files[0] : files.slice().reverse().find((f) => f < cur) || files[files.length - 1];
+    if (!(await nav().openPath(to))) return;
+    const w = storeView();
+    const list = w ? parseEdits(w.state.doc).filter((b) => b.ai) : [];
+    if (list.length) showAiBlock(w, delta > 0 ? list[0] : list[list.length - 1]);
+  }
+  topPrev.addEventListener('click', () => stepAi(-1));
+  topNext.addEventListener('click', () => stepAi(1));
+
+  function updateTopNav() {
+    const { k, before, total } = aiPlace();
+    topPos.textContent = k >= 0 ? `${before + k + 1}/${total}` : `\u2013/${total}`;
+    topPos.title = k >= 0 ? 'This AI edit / all AI edits in the project' : 'The cursor is not in an AI edit';
+  }
+
+  topBar.append(topText, topNav, topFiles, topAccept, topReject);
 
   function updateTopBar() {
     const counts = aiCounts();
@@ -695,6 +764,7 @@
     if (!fileMenu.hidden) renderFileMenu();
     const files = counts.size;
     topText.textContent = `${total} AI edit${total > 1 ? 's' : ''} in ${files} file${files > 1 ? 's' : ''} waiting for review (the new text is what compiles)`;
+    updateTopNav();
   }
 
   function attachTopBar() {
@@ -716,6 +786,9 @@
     .ol-sugg-topbar button { font: inherit; border: 0; border-radius: 12px; padding: 1px 10px; cursor: pointer; color: #fff; white-space: nowrap; }
     .ol-sugg-topbar .ol-sugg-accept { background: #098842; }
     .ol-sugg-topbar .ol-sugg-reject { background: #b83a33; }
+    .ol-sugg-nav { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+    .ol-sugg-topbar .ol-sugg-nav button { background: transparent; color: #4c1d95; padding: 0 6px; font-size: 15px; line-height: 1; }
+    .ol-sugg-pos { min-width: 34px; text-align: center; color: #4c1d95; }
     .ol-sugg-topbar .ol-sugg-files { background: #fff; color: #4c1d95; border: 1px solid #a78bfa; }
     .ol-sugg-filemenu { position: fixed; z-index: 2147483000; font: 12px system-ui, "Segoe UI", sans-serif; min-width: 220px; max-width: 420px; max-height: 300px;
       overflow-y: auto; background: #fff; border: 1px solid #c4b5fd; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.2); padding: 4px 0; }
@@ -1486,6 +1559,9 @@
       field,
       viewTracker,
       theme,
+      EditorView.updateListener.of((u) => {
+        if ((u.selectionSet || u.docChanged) && !topBar.hidden) updateTopNav();
+      }),
       Prec.highest(
         keymap.of([
           { key: 'Mod-Shift-i', run: createOrAdd, preventDefault: true },
