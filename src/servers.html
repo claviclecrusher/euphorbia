@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Edit Servers</title>
+<style>
+  body { font-family: system-ui, "Segoe UI", sans-serif; margin: 0; padding: 22px 26px; background: #f4f5f6; color: #1b222c; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  p { font-size: 12px; color: #495365; margin: 0 0 14px; line-height: 1.5; }
+  .list { display: flex; flex-direction: column; gap: 6px; }
+  .srv { display: flex; gap: 6px; align-items: center; background: #fff; border: 1px solid #d5d9df; border-radius: 8px; padding: 6px; }
+  .srv.current { border-color: #098842; }
+  .srv input { padding: 7px 9px; font-size: 13px; border: 1px solid #afb5c0; border-radius: 6px; box-sizing: border-box; min-width: 0; }
+  .srv input:focus { outline: 2px solid #098842; border-color: transparent; }
+  .srv .name { flex: 0 0 150px; }
+  .srv .url { flex: 1 1 auto; font-family: ui-monospace, monospace; font-size: 12px; }
+  .srv button { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: #e4e7eb; color: #1b222c; cursor: pointer; font-size: 14px; flex: 0 0 auto; }
+  .srv button:disabled { opacity: .35; cursor: default; }
+  .srv button.del:hover { background: #f3d4d2; }
+  .tag { font-size: 10px; color: #098842; flex: 0 0 auto; width: 44px; text-align: center; }
+  .row { margin-top: 18px; display: flex; align-items: center; gap: 12px; }
+  .row button { padding: 9px 20px; font-size: 13px; border: 0; border-radius: 18px; cursor: pointer; }
+  #save { background: #098842; color: #fff; }
+  #save:disabled { background: #8bb89f; cursor: default; }
+  #cancel { background: #e4e7eb; color: #1b222c; }
+  #msg { flex: 1; font-size: 12px; color: #b83a33; }
+</style>
+</head>
+<body>
+  <h1>Servers</h1>
+  <p>Change names and addresses, reorder with ▲ ▼ (the order of the Server menu and of Ctrl+1…9), or remove a
+     server. A changed address is checked before saving; sign-in and this app's local data (chats, tabs) are
+     kept per address, so a new address starts fresh there. Projects on the servers are not affected.</p>
+  <div class="list" id="list"></div>
+  <div class="row">
+    <button id="save" type="button">Save</button>
+    <button id="cancel" type="button">Cancel</button>
+    <span id="msg"></span>
+  </div>
+<script>
+  const list = document.getElementById('list');
+  const msg = document.getElementById('msg');
+  const save = document.getElementById('save');
+  let current = '';
+
+  function row(s) {
+    const r = document.createElement('div');
+    r.className = 'srv' + (s.url === current ? ' current' : '');
+    r.dataset.orig = s.url;
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = s.url === current ? 'current' : '';
+    const name = document.createElement('input');
+    name.className = 'name';
+    name.value = s.name;
+    name.maxLength = 40;
+    name.placeholder = 'Name';
+    name.spellcheck = false;
+    const url = document.createElement('input');
+    url.className = 'url';
+    url.value = s.url;
+    url.placeholder = 'http://server-address';
+    url.spellcheck = false;
+    const up = document.createElement('button');
+    up.textContent = '▲';
+    up.title = 'Move up';
+    up.addEventListener('click', () => { if (r.previousElementSibling) list.insertBefore(r, r.previousElementSibling); refresh(); });
+    const down = document.createElement('button');
+    down.textContent = '▼';
+    down.title = 'Move down';
+    down.addEventListener('click', () => { if (r.nextElementSibling) list.insertBefore(r.nextElementSibling, r); refresh(); });
+    const del = document.createElement('button');
+    del.className = 'del';
+    del.textContent = '−';
+    del.title = 'Remove from the list';
+    del.addEventListener('click', () => { r.remove(); refresh(); });
+    r.append(tag, name, url, up, down, del);
+    return r;
+  }
+
+  function refresh() {
+    const rows = [...list.children];
+    rows.forEach((r, i) => {
+      const [up, down, del] = r.querySelectorAll('button');
+      up.disabled = i === 0;
+      down.disabled = i === rows.length - 1;
+      del.disabled = rows.length === 1;
+    });
+  }
+
+  window.servers.get().then((data) => {
+    current = data.current;
+    for (const s of data.servers) list.appendChild(row(s));
+    refresh();
+  });
+
+  document.getElementById('cancel').addEventListener('click', () => window.close());
+  save.addEventListener('click', async () => {
+    save.disabled = true;
+    msg.style.color = '#495365';
+    msg.textContent = 'Saving…';
+    const items = [...list.children].map((r) => ({ orig: r.dataset.orig, name: r.querySelector('.name').value, url: r.querySelector('.url').value }));
+    const res = await window.servers.save(items);
+    if (!res.ok) {
+      msg.style.color = '#b83a33';
+      msg.textContent = res.error;
+      save.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

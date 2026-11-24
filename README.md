@@ -28,7 +28,8 @@ On Ubuntu 24.04+ the AppImage needs `libfuse2` and may need `--no-sandbox`.
 
 ## Features
 
-- **Servers** — **Server** menu to add, remove and switch (`Ctrl+1`…`Ctrl+9`);
+- **Servers** — **Server** menu to add, edit (name, address, order), remove and
+  switch (`Ctrl+1`…`Ctrl+9`);
   sign-in is kept per server. Email/password sign-in only.
 - **Copy a project to another server** — **More → Make a copy to other server**
   (files only; no history or comments).

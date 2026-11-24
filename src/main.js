@@ -447,6 +447,78 @@ function showSetup() {
   });
 }
 
+let serversWindow = null;
+
+function showServers() {
+  if (serversWindow) {
+    serversWindow.focus();
+    return;
+  }
+  serversWindow = new BrowserWindow({
+    icon: APP_ICON,
+    width: 680,
+    height: 480,
+    minWidth: 520,
+    minimizable: false,
+    maximizable: false,
+    parent: mainWindow || undefined,
+    modal: !!mainWindow,
+    title: 'Edit Servers',
+    autoHideMenuBar: true,
+    webPreferences: { ...webPreferences, preload: path.join(__dirname, 'servers-preload.js') },
+  });
+  serversWindow.setMenuBarVisibility(false);
+  serversWindow.loadFile(path.join(__dirname, 'servers.html'));
+  serversWindow.on('closed', () => {
+    serversWindow = null;
+  });
+}
+
+const fromServersWindow = (event) => serversWindow && event.sender === serversWindow.webContents;
+
+ipcMain.handle('servers:get', (event) => (fromServersWindow(event) ? { servers: config.servers, current: config.current } : null));
+
+// items: [{ orig, name, url }] in the new order. Changed addresses are checked
+// like a new server; removed ones drop out of the list.
+ipcMain.handle('servers:save', async (event, items) => {
+  if (!fromServersWindow(event) || !Array.isArray(items) || !items.length) return { ok: false, error: 'Nothing to save.' };
+  const next = [];
+  let current = config.current;
+  for (const it of items.slice(0, 50)) {
+    const orig = String((it && it.orig) || '');
+    const typed = String((it && it.url) || '').trim();
+    let url = orig;
+    if (typed !== orig) {
+      try {
+        const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(typed);
+        url = null;
+        if (typed && !hasScheme) {
+          try {
+            url = await probeServer(normalizeServerUrl('https://' + typed), 5000);
+          } catch {
+            /* try http below */
+          }
+        }
+        if (!url) url = await probeServer(normalizeServerUrl(typed));
+      } catch (err) {
+        return { ok: false, error: `${typed || '(empty address)'}: ${err.message || err}` };
+      }
+    }
+    if (next.some((x) => x.url === url)) return { ok: false, error: `${url} is in the list twice.` };
+    const name = String((it && it.name) || '').trim().slice(0, 40) || defaultName(url);
+    next.push({ name, url });
+    if (orig === config.current) current = url;
+  }
+  if (!next.some((x) => x.url === current)) current = next[0].url;
+  const switching = current !== config.current;
+  saveConfig({ servers: next });
+  if (switching) switchServer(current);
+  else buildMenu();
+  const win = serversWindow;
+  if (win) setImmediate(() => win.destroy());
+  return { ok: true };
+});
+
 // -------------------------------------------------------------------- ipc ---
 
 // Scripts the page preload injects before the page's own scripts run.
@@ -559,6 +631,7 @@ function buildMenu() {
         ...serverItems,
         ...(serverItems.length ? [{ type: 'separator' }] : []),
         { label: 'Add Server…', click: showSetup },
+        { label: 'Edit Servers…', click: showServers },
         { label: 'Remove Current Server…', enabled: !!config.current, click: removeCurrentServer },
       ],
     },
