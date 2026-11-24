@@ -17,8 +17,13 @@ Download from the [latest release](https://github.com/claviclecrusher/euphorbia/
 | Windows, no install | `euphorbia-portable-<version>.exe` | notification |
 | Linux | `euphorbia-<version>.AppImage` | automatic |
 | Debian/Ubuntu | `euphorbia_<version>_amd64.deb` | notification |
+| macOS (Intel and Apple Silicon) | `euphorbia-<version>-mac.dmg` | notification |
 
 The Windows files are not code-signed: on SmartScreen choose **More info → Run anyway**.
+The macOS app is not signed with an Apple developer ID. The first time, open it,
+then go to **System Settings → Privacy & Security** and choose **Open Anyway**
+(or run `xattr -dr com.apple.quarantine /Applications/Euphorbia.app`). New
+versions are announced in the app; download them from the releases page.
 On Ubuntu 24.04+ the AppImage needs `libfuse2` and may need `--no-sandbox`.
 
 ## Features
