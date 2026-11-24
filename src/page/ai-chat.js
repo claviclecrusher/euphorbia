@@ -207,6 +207,8 @@
       pendingRefs.push(ref);
     }
     setCollapsed(false);
+    // Ctrl+L / Add to AI Chat brings the AI Chat tab up.
+    if (!(aiOn && panelOpen())) railTab.click();
     renderRefs();
     input.focus();
   }
@@ -483,6 +485,7 @@
   let collapsed = localStorage.getItem('ol-desktop-chat-collapsed') === '1';
 
   function setCollapsed(c) {
+    if (panel.classList.contains('in-rail')) c = false; // a tab of its own: never folded
     collapsed = c;
     panel.classList.toggle('collapsed', c);
     panel.style.height = c ? '' : `${height}px`;
@@ -1139,23 +1142,111 @@
 
   // ------------------------------------------------------------ mount ---
 
-  // Below the File tree / File outline group, in the same column.
+  // A tab of its own in Overleaf's left rail (after File tree, Search, Chat).
+  // While it is on, the rail panel shows the AI chat over the selected tab's
+  // content; clicking any other tab turns it off.
+  const RAIL_KEY = 'ol-desktop-ai-tab';
+  let aiOn = localStorage.getItem(RAIL_KEY) === '1';
+  const pane = el('div', 'ol-ai-pane');
+  const railTab = el('button', 'ide-rail-tab-link nav-link ol-ai-rail-tab');
+  railTab.type = 'button';
+  railTab.title = 'AI Chat';
+  railTab.setAttribute('aria-label', 'AI Chat');
+  railTab.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2zm7 11l.95 2.55L22.5 16.5l-2.55.95L19 20l-.95-2.55-2.55-.95 2.55-.95L19 13zM6 15l.7 1.8 1.8.7-1.8.7L6 20l-.7-1.8-1.8-.7 1.8-.7L6 15z"/></svg>';
+
+  const railContent = () => document.querySelector('.ide-rail-content');
+  const panelOpen = () => {
+    const c = railContent();
+    return !!(c && c.offsetWidth > 40);
+  };
+  const nativeActive = () => document.querySelector('.ide-rail-tabs-wrapper .ide-rail-tab-link.active:not(.ol-ai-rail-tab)');
+
+  function showAi(on) {
+    aiOn = on;
+    localStorage.setItem(RAIL_KEY, on ? '1' : '0');
+    const c = railContent();
+    if (c) c.classList.toggle('ol-ai-on', on);
+    const rail = document.querySelector('.ide-rail');
+    if (rail) rail.classList.toggle('ol-ai-on-rail', on);
+    railTab.classList.toggle('active', on);
+    railTab.classList.toggle('open-rail', on);
+    if (on) {
+      render();
+      renderRefs();
+      loadModels();
+      setTimeout(() => input.focus(), 50);
+    }
+  }
+
+  railTab.addEventListener('click', () => {
+    if (aiOn && panelOpen()) {
+      // Close the panel like Overleaf's tabs do: its active tab toggles it.
+      showAi(false);
+      const t = nativeActive();
+      if (t) t.click();
+      return;
+    }
+    if (!panelOpen()) {
+      // Open the panel with Overleaf's own first tab, then cover it.
+      const first = document.querySelector('.ide-rail-tabs-wrapper .ide-rail-tab-link:not(.ol-ai-rail-tab)');
+      if (first && !first.classList.contains('active')) first.click();
+      else if (first) first.click();
+    }
+    showAi(true);
+  });
+
   function attach() {
-    const group = document.querySelector('.file-tree-outline-panel-group');
-    const host = group && group.parentElement;
-    if (!host) return;
-    if (panel.parentElement === host && group.nextElementSibling === panel) return;
-    host.classList.add('ol-chat-host');
-    group.classList.add('ol-chat-group');
-    group.after(panel);
-    setCollapsed(collapsed);
-    render();
-    renderRefs();
-    loadModels();
+    const wrapper = document.querySelector('.ide-rail-tabs-wrapper');
+    const content = railContent();
+    if (wrapper && railTab.parentElement !== wrapper) {
+      // Before the "more options" element at the end of the tab list.
+      const tabs = wrapper.querySelectorAll('.ide-rail-tab-link:not(.ol-ai-rail-tab)');
+      const lastTab = tabs[tabs.length - 1];
+      const after = lastTab ? lastTab.closest('.ide-rail-tabs-wrapper > *') : null;
+      if (after) after.after(railTab);
+      else wrapper.appendChild(railTab);
+      // Another tab turns the AI chat off. A click on the tab that is active
+      // underneath would close the panel in Overleaf: just show it instead.
+      wrapper.addEventListener('click', (e) => {
+        const t = e.target.closest('.ide-rail-tab-link');
+        if (!t || t === railTab || !aiOn) return;
+        if (t.classList.contains('active') && panelOpen()) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        showAi(false);
+      }, true);
+    }
+    if (content && pane.parentElement !== content) {
+      content.appendChild(pane);
+      content.classList.toggle('ol-ai-on', aiOn);
+    }
+    if (panel.parentElement !== pane) {
+      pane.appendChild(panel);
+      panel.classList.add('in-rail');
+      setCollapsed(false);
+      render();
+      renderRefs();
+      loadModels();
+    }
+    const rail = document.querySelector('.ide-rail');
+    if (rail) rail.classList.toggle('ol-ai-on-rail', aiOn);
+    railTab.classList.toggle('active', aiOn);
+    railTab.classList.toggle('open-rail', aiOn);
   }
 
   const style = el('style');
   style.textContent = `
+    .ide-rail-content { position: relative; }
+    .ol-ai-pane { display: none; position: absolute; inset: 0; z-index: 5; }
+    .ide-rail-content.ol-ai-on > .ide-rail-tab-content { visibility: hidden; }
+    .ide-rail-content.ol-ai-on > .ol-ai-pane { display: flex; flex-direction: column; }
+    .ol-ai-pane > .ol-chat { flex: 1 1 auto; height: auto !important; border-top: 0; }
+    .ol-chat.in-rail .ol-chat-handle, .ol-chat.in-rail .ol-chat-toggle { display: none; }
+    .ol-chat.in-rail .ol-chat-title { cursor: default; }
+    .ol-ai-rail-tab { display: flex; align-items: center; justify-content: center; border: 0; background: none; color: inherit; }
+    .ide-rail.ol-ai-on-rail .ide-rail-tab-link.active:not(.ol-ai-rail-tab) { background: transparent !important; }
+    .ide-rail.ol-ai-on-rail .ide-rail-tab-link.active:not(.ol-ai-rail-tab)::before { display: none !important; }
     .ol-chat-host { display: flex !important; flex-direction: column; }
     .ol-chat-host > .ol-chat-group { flex: 1 1 auto; min-height: 80px; }
     .ol-chat { flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0;

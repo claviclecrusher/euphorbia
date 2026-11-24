@@ -59,7 +59,8 @@ is loaded when you open a project.
   and models (`connector-opus` …). No API cost; the subscription's limits apply.
   The Claude effort setting applies to it too.
 - **`Ctrl+K`** rewrites the selected lines.
-- **Chat panel** (under the file outline) answers questions about the whole
+- **AI Chat** (its own tab in the left bar, after File tree, Search and Chat)
+  answers questions about the whole
   project. `Ctrl+L` adds the selected lines to the message. Modes:
   **Edit** (may change files), **Read** (answers only), **Search** (highlights
   related places in yellow).
