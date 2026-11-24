@@ -6,19 +6,20 @@
 #        then scripts/render-icons.sh
 import math, sys
 
-BASE = (512, 342)  # where the leaves start (top of the body), drawing units
+BASE = (512, 342)
+DROOP = 0.42  # how far leaf tips sink, relative to the leaf length  # where the leaves start (top of the body), drawing units
 BODY = 'M512 320 C615 320 676 420 698 560 C722 720 720 860 690 915 C660 955 600 955 512 955 C424 955 364 955 334 915 C304 860 302 720 326 560 C348 420 409 320 512 320 Z'
 
 # Leaves: (angle from straight up in degrees, + = right; length; half-width;
 # bend: how far the middle bows sideways). Uneven on purpose.
 LEAVES = [
-    (-74, 190, 15, 22),
-    (-47, 262, 17, 26),
-    (-21, 214, 14, 14),
-    (9, 286, 16, -12),
-    (33, 228, 15, -20),
-    (58, 268, 17, -28),
-    (79, 172, 13, -18),
+    (-70, 200, 15, 34),
+    (-45, 262, 17, 42),
+    (-20, 222, 14, 22),
+    (9, 286, 16, -16),
+    (32, 236, 15, -32),
+    (56, 268, 17, -44),
+    (76, 182, 13, -30),
 ]
 # bend: the middle bows upward (towards the left for leaves leaning left, the
 # right for those leaning right), so the tips droop outward a little.
@@ -30,6 +31,9 @@ def leaf(angle, length, half, bend):
     nx, ny = -uy, ux                              # to its right
     bx, by = BASE[0] + ux * 6, BASE[1] + uy * 6
     tx, ty = bx + ux * length, by + uy * length
+    # Droop: the tip sinks, more for leaves that lean further out, so each
+    # leaf arches over and hangs a little.
+    ty += length * DROOP * abs(math.sin(a)) ** 1.2
     mx, my = bx + ux * length * 0.45 + nx * bend, by + uy * length * 0.45 + ny * bend
     p = lambda x, y: f'{x:.1f} {y:.1f}'
     # Two curved sides from base to tip, widest a little below the middle.
