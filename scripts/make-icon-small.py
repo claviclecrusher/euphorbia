@@ -87,8 +87,8 @@ svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width=
     </linearGradient>
     <!-- Each leaf: the fill runs from its base (dark) to its tip (light). -->
     <linearGradient id="leaf" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" stop-color="#2c5a34"/>
-      <stop offset="1" stop-color="#86c873"/>
+      <stop offset="0" stop-color="#1c3d23"/>
+      <stop offset="1" stop-color="#4f9a4c"/>
     </linearGradient>
     <pattern id="tub" width="92" height="64" patternUnits="userSpaceOnUse" x="20" y="14">
       <rect width="92" height="64" fill="#2a4f31"/>
