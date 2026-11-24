@@ -16,7 +16,6 @@ LEAVES = [
     (-70, 200, 15, 34),
     (-45, 262, 17, 42),
     (-20, 222, 14, 22),
-    (9, 286, 16, -16),
     (32, 236, 15, -32),
     (56, 268, 17, -44),
     (76, 182, 13, -30),
@@ -35,11 +34,20 @@ def leaf(angle, length, half, bend):
     # leaf arches over and hangs a little.
     ty += length * DROOP * abs(math.sin(a)) ** 1.2
     mx, my = bx + ux * length * 0.45 + nx * bend, by + uy * length * 0.45 + ny * bend
+    # At the tip the leaf points outward and down (it hangs), steeper for
+    # leaves that lean further out; the control before the tip sits above it.
+    lean = abs(math.sin(a))
+    down = math.radians(10 + 45 * lean)
+    sx = 1 if ux >= 0 else -1
+    dx, dy = sx * math.cos(down), math.sin(down)
+    cx, cy = tx - dx * length * 0.32, ty - dy * length * 0.32
+    # The leaf's half-width across the tip direction.
+    wx, wy = -dy * sx, dx * sx
     p = lambda x, y: f'{x:.1f} {y:.1f}'
     # Two curved sides from base to tip, widest a little below the middle.
     return (f'M{p(bx - nx * half * 0.5, by - ny * half * 0.5)} '
-            f'C{p(mx - nx * half * 1.3, my - ny * half * 1.3)} {p(tx - ux * length * 0.25 - nx * half * 0.4, ty - uy * length * 0.25 - ny * half * 0.4)} {p(tx, ty)} '
-            f'C{p(tx - ux * length * 0.25 + nx * half * 0.4, ty - uy * length * 0.25 + ny * half * 0.4)} {p(mx + nx * half * 1.3, my + ny * half * 1.3)} {p(bx + nx * half * 0.5, by + ny * half * 0.5)} Z')
+            f'C{p(mx - nx * half * 1.3, my - ny * half * 1.3)} {p(cx - wx * half * 0.5, cy - wy * half * 0.5)} {p(tx, ty)} '
+            f'C{p(cx + wx * half * 0.5, cy + wy * half * 0.5)} {p(mx + nx * half * 1.3, my + ny * half * 1.3)} {p(bx + nx * half * 0.5, by + ny * half * 0.5)} Z')
 
 
 def diamond(cx, cy):
