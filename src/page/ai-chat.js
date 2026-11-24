@@ -187,9 +187,12 @@
 
   // -------------------------------------------------------------- Ctrl+L ---
 
+  // The selected lines as a reference, or null when nothing is selected
+  // (Ctrl+L then only opens the AI Chat tab for typing).
   function refFromSelection(v) {
     const { state } = v;
     const sel = state.selection.main;
+    if (sel.empty) return null;
     const first = state.doc.lineAt(sel.from);
     let last = state.doc.lineAt(sel.to);
     if (sel.to > sel.from && sel.to === last.from && last.number > first.number) last = state.doc.line(last.number - 1);
@@ -202,8 +205,8 @@
   }
 
   function addRef(ref) {
-    if (!ref || !ref.path) return;
-    if (!pendingRefs.some((r) => r.path === ref.path && r.startLine === ref.startLine && r.endLine === ref.endLine)) {
+    if (ref && !ref.path) return;
+    if (ref && !pendingRefs.some((r) => r.path === ref.path && r.startLine === ref.startLine && r.endLine === ref.endLine)) {
       pendingRefs.push(ref);
     }
     setCollapsed(false);
