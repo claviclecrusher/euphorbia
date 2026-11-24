@@ -658,6 +658,43 @@
     return card;
   }
 
+  // One line for all edits of an answer that went in (or are still pending):
+  // "✎ 3 edits suggested (only you see them until you accept)" and the files,
+  // each opening its first edit.
+  function editSummary(items) {
+    const card = el('div', 'ol-chat-edit');
+    const head = el('div', 'ol-chat-edit-head');
+    const pending = items.some(({ state }) => !state);
+    const proposals = items.every(({ state }) => !state || state.proposalId);
+    const n = items.length;
+    head.appendChild(el('span', 'ol-chat-edit-count', `\u270e ${n} edit${n === 1 ? '' : 's'}`));
+    const st = el('span', 'ol-chat-edit-state');
+    st.textContent = pending ? 'pending' : proposals ? `suggested (only you see ${n === 1 ? 'it' : 'them'} until you accept)` : 'added for review';
+    st.classList.toggle('ok', !pending);
+    head.appendChild(st);
+    const files = el('div', 'ol-chat-edit-files');
+    const byFile = new Map();
+    for (const it of items) {
+      if (!byFile.has(it.edit.file)) byFile.set(it.edit.file, []);
+      byFile.get(it.edit.file).push(it);
+    }
+    for (const [file, list] of byFile) {
+      const name = file.split('/').pop();
+      const b = el('button', 'ol-chat-ref-link', list.length > 1 ? `${name} \u00d7${list.length}` : name);
+      b.type = 'button';
+      b.title = file;
+      b.addEventListener('click', async () => {
+        const first = list[0].state;
+        if (first && first.line) return revealLines(file, first.line, first.line);
+        await openPath(file);
+        if (first && first.proposalId && window.__olDesktopEdits) setTimeout(() => window.__olDesktopEdits.revealProposal(first.proposalId), 150);
+      });
+      files.appendChild(b);
+    }
+    card.append(head, files);
+    return card;
+  }
+
   function renderMessage(msg) {
     const box = el('div', `ol-chat-msg ${msg.role}`);
     if (msg.role === 'user') {
@@ -677,11 +714,32 @@
       ? [{ text: msg.content }, ...msg.proposals.map((_, i) => ({ edit: i }))]
       : legacy.parts;
     const edits = Array.isArray(msg.proposals) ? msg.proposals : legacy.edits;
+    // Edits that went in (or are pending) are summed up in one line where the
+    // first of them was; edits that failed keep their own line with Try again.
+    const states = msg.edits || [];
+    const good = parts.filter((p) => p.text == null && !(states[p.edit] && !states[p.edit].ok));
+    let summarized = false;
+    let modeNoted = false;
     for (const p of parts) {
       if (p.text != null) {
         if (p.text.trim()) box.appendChild(textNode(p.text));
-      } else {
-        box.appendChild(editCard(edits[p.edit], (msg.edits || [])[p.edit]));
+      } else if (states[p.edit] && !states[p.edit].ok && /\bmode, read-only\)/.test(states[p.edit].error || '')) {
+        // Edits written in Read or Search mode: one line for all of them.
+        if (!modeNoted) {
+          modeNoted = true;
+          const n = parts.filter((q) => q.text == null && states[q.edit] && /\bmode, read-only\)/.test(states[q.edit].error || '')).length;
+          const card = el('div', 'ol-chat-edit');
+          const st = el('span', 'ol-chat-edit-state error', `\u270e ${n} edit${n === 1 ? '' : 's'} ${states[p.edit].error}`);
+          card.appendChild(st);
+          box.appendChild(card);
+        }
+      } else if (states[p.edit] && !states[p.edit].ok) {
+        box.appendChild(editCard(edits[p.edit], states[p.edit]));
+      } else if (good.length === 1) {
+        box.appendChild(editCard(edits[p.edit], states[p.edit]));
+      } else if (!summarized) {
+        summarized = true;
+        box.appendChild(editSummary(good.map((g) => ({ edit: edits[g.edit], state: states[g.edit] }))));
       }
     }
     if (hits.length) {
@@ -1056,6 +1114,9 @@
     .ol-chat-edit-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     .ol-chat-edit .ol-chat-ref-link { padding: 0; max-width: 100%; }
     .ol-chat-edit-state { font-size: 10px; opacity: .75; }
+    .ol-chat-edit-count { font-weight: 600; }
+    .ol-chat-edit-files { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; }
+    .ol-chat-edit-files .ol-chat-ref-link { padding: 0; }
     .ol-chat-edit-state.ok { color: #5fd38d; opacity: 1; }
     .ol-chat-edit-state.error { color: #ff8a80; opacity: 1; }
     .ol-chat-retry { font: inherit; font-size: 10px; color: inherit; background: rgba(255,255,255,.12); border: 0; border-radius: 8px; padding: 1px 6px; cursor: pointer; }
