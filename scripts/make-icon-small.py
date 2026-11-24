@@ -13,12 +13,11 @@ BODY = 'M512 320 C615 320 676 420 698 560 C722 720 720 860 690 915 C660 955 600 
 # Leaves: (angle from straight up in degrees, + = right; length; half-width;
 # bend: how far the middle bows sideways). Uneven on purpose.
 LEAVES = [
-    (-70, 200, 15, 34),
-    (-45, 262, 17, 42),
-    (-20, 222, 14, 22),
-    (32, 236, 15, -32),
-    (56, 268, 17, -44),
-    (76, 182, 13, -30),
+    (-68, 178, 21, 30),
+    (-36, 228, 23, 34),
+    (24, 212, 21, -26),
+    (52, 236, 23, -38),
+    (76, 162, 19, -26),
 ]
 # bend: the middle bows upward (towards the left for leaves leaning left, the
 # right for those leaning right), so the tips droop outward a little.
