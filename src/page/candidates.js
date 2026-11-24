@@ -278,6 +278,157 @@
     return out;
   }
 
+  // Word-level difference of an edit block's old and new text: character
+  // ranges [from, to) that changed, in each. Tokens are words, runs of spaces
+  // and single other characters; a longest common subsequence keeps the rest.
+  function wordDiff(a, b) {
+    const tok = (t) => t.match(/[A-Za-z0-9\u00C0-\uFFFF]+|\s+|[^A-Za-z0-9\u00C0-\uFFFF\s]/g) || [];
+    const A = tok(a);
+    const B = tok(b);
+    const n = A.length;
+    const m = B.length;
+    if (!n || !m) return { old: n ? [[0, a.length]] : [], new: m ? [[0, b.length]] : [] };
+    if (n * m > 250000) return { old: [], new: [] }; // too long to compare quickly
+    const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    const out = { old: [], new: [] };
+    const push = (list, from, to) => {
+      const last = list[list.length - 1];
+      if (last && last[1] === from) last[1] = to;
+      else list.push([from, to]);
+    };
+    let i = 0;
+    let j = 0;
+    let pa = 0;
+    let pb = 0;
+    while (i < n || j < m) {
+      if (i < n && j < m && A[i] === B[j]) {
+        pa += A[i++].length;
+        pb += B[j++].length;
+      } else if (j < m && (i >= n || L[i][j + 1] >= L[i + 1][j])) {
+        push(out.new, pb, pb + B[j].length);
+        pb += B[j++].length;
+      } else {
+        push(out.old, pa, pa + A[i].length);
+        pa += A[i++].length;
+      }
+    }
+    // Whitespace-only changes are not worth a highlight.
+    const visible = (t, list) => list.filter(([f, e]) => /\S/.test(t.slice(f, e)));
+    return { old: visible(a, out.old), new: visible(b, out.new) };
+  }
+
+  // ------------------------------------------------------------- notes ---
+  //
+  // A note is one comment line about the line above it:
+  //   % comment (Alice Kim, 2026-11-24 15:02): check this number
+  // Shown as a yellow sticky note under that line.
+
+  const NOTE_RE = /^\s*% comment \(([^,()]*), ([^()]*)\): ?(.*)$/;
+
+  // Each: { line, from, to, by, at, text } (line: the note's own line number).
+  function parseNotes(doc) {
+    const out = [];
+    if (doc.length < 12) return out;
+    for (let n = 2; n <= doc.lines; n++) {
+      const l = doc.line(n);
+      if (l.text.indexOf('% comment (') < 0) continue;
+      const m = NOTE_RE.exec(l.text);
+      if (m) out.push({ line: n, from: l.from, to: l.to, by: m[1].trim(), at: m[2].trim(), text: m[3] });
+    }
+    return out;
+  }
+
+  const noteLine = (by, at, text) => `% comment (${clean(by).replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim() || 'Anonymous'}, ${at}): ${String(text).replace(/\s*\n\s*/g, ' ').trim()}`;
+
+  // Adds a note under line `lineNo` (1-based) of the view's document.
+  function insertNote(view, lineNo, text, by) {
+    const doc = view.state.doc;
+    if (!text || !String(text).trim()) return { ok: false, error: 'The note is empty.' };
+    if (lineNo < 1 || lineNo > doc.lines) return { ok: false, error: 'No such line.' };
+    const l = doc.line(lineNo);
+    if (overlapsAny(doc, l.from, l.to) && !insideNewText(doc, lineNo)) {
+      return { ok: false, error: 'That line is inside a candidates block or the old part of an edit.' };
+    }
+    // Under the line's earlier notes, if any, so they stay in order.
+    let after = lineNo;
+    while (after < doc.lines && NOTE_RE.test(doc.line(after + 1).text)) after++;
+    view.dispatch({ changes: { from: doc.line(after).to, insert: '\n' + noteLine(by, now(), text) }, userEvent: 'input.candidates' });
+    return { ok: true, line: lineNo };
+  }
+
+  // Inside the new text of an edit block (notes there are fine).
+  function insideNewText(doc, lineNo) {
+    return parseEdits(doc).some((b) => lineNo > b.newLine && lineNo < b.endLine);
+  }
+
+  // A one-line box for writing or editing a note, under line `lineNo`.
+  let noteBox = null;
+  function closeNoteBox(refocus) {
+    if (!noteBox) return;
+    const { el, view } = noteBox;
+    noteBox = null;
+    el.remove();
+    if (refocus && view) view.focus();
+  }
+  function openNoteBox(view, lineNo, note) {
+    closeNoteBox(false);
+    const el = document.createElement('div');
+    el.className = 'ol-note-box';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.spellcheck = false;
+    input.placeholder = note ? 'Edit the note (Enter to save, Esc to cancel)' : 'Note about this line; "quote" a part to highlight it (Enter to add, Esc to cancel)';
+    input.value = note ? note.text : '';
+    el.appendChild(input);
+    const anchor = view.state.doc.line(lineNo);
+    const coords = view.coordsAtPos(anchor.to) || view.coordsAtPos(anchor.from);
+    const content = view.contentDOM.getBoundingClientRect();
+    el.style.left = `${Math.max(8, content.left + 24)}px`;
+    el.style.width = `${Math.max(260, Math.min(560, content.width - 48))}px`;
+    el.style.top = `${(coords ? coords.bottom : content.top) + 4}px`;
+    document.body.appendChild(el);
+    noteBox = { el, view };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeNoteBox(true);
+      } else if (e.key === 'Enter' && !e.isComposing) {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (note) {
+          const cur = parseNotes(view.state.doc).find((n) => n.from === note.from);
+          if (cur) {
+            view.dispatch({
+              changes: text ? { from: cur.from, to: cur.to, insert: noteLine(cur.by || author(), cur.at, text) } : { from: Math.max(0, cur.from - 1), to: cur.to, insert: '' },
+              userEvent: 'input.candidates',
+            });
+          }
+        } else if (text) {
+          const res = insertNote(view, lineNo, text, author());
+          if (!res.ok) window.alert(res.error);
+        }
+        closeNoteBox(true);
+      }
+    });
+    input.addEventListener('blur', () => setTimeout(() => noteBox && noteBox.el === el && closeNoteBox(false), 150));
+    setTimeout(() => input.focus(), 0);
+  }
+
+  // Ctrl+Shift+J: a note on the line of the cursor (the last selected line).
+  function addNoteCmd(view) {
+    if (!editable(view)) return false;
+    const { last } = selectedLines(view.state);
+    openNoteBox(view, last.number, null);
+    return true;
+  }
+
+  function removeNote(view, pos) {
+    const n = parseNotes(view.state.doc).find((x) => pos >= x.from && pos <= x.to);
+    if (n && editable(view)) view.dispatch({ changes: { from: Math.max(0, n.from - 1), to: n.to, insert: '' }, userEvent: 'input.candidates' });
+  }
+
   const editAt = (state, pos) => parseEdits(state.doc).find((b) => pos >= b.from && pos <= b.to) || null;
 
   function overlapsAny(doc, from, to) {
@@ -844,6 +995,9 @@
   }
   const topStyle = document.createElement('style');
   topStyle.textContent = `
+    .ol-note-box { position: fixed; z-index: 2147483000; background: #fff4b8; border: 1px solid #e0b100; border-radius: 6px;
+      box-shadow: 0 6px 18px rgba(0,0,0,.25); padding: 4px; }
+    .ol-note-box input { width: 100%; box-sizing: border-box; border: 0; background: transparent; font: 13px system-ui, "Segoe UI", sans-serif; color: #3b3000; outline: none; padding: 4px 6px; }
     .ol-sugg-topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 3px 10px;
       background: #ede5fb; color: #1b222c; border-bottom: 2px solid #8b5cf6; font: 12px system-ui, "Segoe UI", sans-serif; }
     .ol-sugg-topbar[hidden] { display: none; }
@@ -1129,7 +1283,27 @@
   }
 
   // Actions for the editor's right-click menu (run by the app).
+  // Notes from the AI chat: opens the file and adds the note under the line
+  // that contains `find` (its last line).
+  async function addNoteFor({ file, find, text, by }) {
+    if (file !== currentReviewPath()) {
+      if (!nav() || !(await nav().openPath(file))) return { ok: false, error: `Could not open ${file}.` };
+    }
+    const v = storeView();
+    if (!v || !editable(v)) return { ok: false, error: 'The editor is not ready (or the file is read-only).' };
+    const all = v.state.doc.toString();
+    const i = all.indexOf(find);
+    if (!find || i < 0) return { ok: false, error: 'The line was not found (it may have changed).' };
+    if (all.indexOf(find, i + 1) >= 0) return { ok: false, error: 'The text appears more than once in the file.' };
+    const lineNo = v.state.doc.lineAt(i + find.length).number;
+    const res = insertNote(v, lineNo, text, by || 'AI');
+    if (res.ok) v.dispatch({ selection: { anchor: v.state.doc.line(lineNo).from }, scrollIntoView: true });
+    return res;
+  }
+  window.__olDesktopEdits.addNote = addNoteFor;
+
   window.__euphorbiaActions = {
+    note: () => { const v = storeView(); return v ? addNoteCmd(v) : false; },
     candidates: () => { const v = storeView(); return v ? createOrAdd(v) : false; },
     diffEdit: () => { const v = storeView(); return v ? createEdit(v) : false; },
     aiEdit: () => { const v = storeView(); return v ? aiEdit(v) : false; },
@@ -1299,7 +1473,8 @@
         this.k = k;
         this.place = place;
         this.ai = !!block.ai;
-        this.key = `${this.ai}|${this.by}|${this.at}|${this.empty}|${k}|${place.pos}/${place.total}|${this.old.join('\n')}`;
+        this.changed = wordDiff(block.oldLines.join('\n'), block.newLines.join('\n')).old;
+        this.key = `${this.ai}|${this.by}|${this.at}|${this.empty}|${k}|${place.pos}/${place.total}|${this.old.join('\n')}|${JSON.stringify(this.changed)}`;
       }
 
       eq(other) {
@@ -1359,11 +1534,27 @@
         bar.addEventListener('mousedown', (e) => e.preventDefault());
         box.appendChild(bar);
 
+        let at = 0; // offset of this line in the old text
         for (const text of this.old) {
           const line = document.createElement('div');
           line.className = this.ai ? 'ol-edit-old ol-ai-old' : 'ol-edit-old';
-          line.textContent = text || '\u200b';
+          // The changed words of the line, in a stronger style.
+          const parts = this.changed
+            .map(([f, e]) => [Math.max(f, at) - at, Math.min(e, at + text.length) - at])
+            .filter(([f, e]) => e > f);
+          let pos = 0;
+          for (const [f, e] of parts) {
+            if (f > pos) line.appendChild(document.createTextNode(text.slice(pos, f)));
+            const mark = document.createElement('span');
+            mark.className = 'ol-diff-old';
+            mark.textContent = text.slice(f, e);
+            line.appendChild(mark);
+            pos = e;
+          }
+          if (pos < text.length) line.appendChild(document.createTextNode(text.slice(pos)));
+          if (!text) line.textContent = '\u200b';
           box.appendChild(line);
+          at += text.length + 1;
         }
         if (this.empty) {
           const note = document.createElement('div');
@@ -1378,6 +1569,54 @@
         return true;
       }
     }
+
+    // A note: a yellow sticky under the line it is about.
+    class NoteWidget extends WidgetType {
+      constructor(note) {
+        super();
+        this.note = note;
+        this.key = `${note.by}|${note.at}|${note.text}`;
+      }
+
+      eq(other) {
+        return other.key === this.key;
+      }
+
+      toDOM(view) {
+        const box = document.createElement('div');
+        box.className = 'ol-note';
+        const pin = document.createElement('span');
+        pin.className = 'ol-note-pin';
+        pin.textContent = '\u{1F4CC}';
+        const body = document.createElement('span');
+        body.className = 'ol-note-text';
+        body.textContent = this.note.text;
+        body.title = 'Click to edit';
+        const meta = document.createElement('span');
+        meta.className = 'ol-note-meta';
+        meta.textContent = stamp(this.note.by, this.note.at);
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'ol-note-del';
+        del.textContent = '\u00d7';
+        del.title = 'Remove this note';
+        const pos = () => view.posAtDOM(box);
+        body.addEventListener('click', () => {
+          const n = parseNotes(view.state.doc).find((x) => pos() >= x.from && pos() <= x.to);
+          if (n && editable(view)) openNoteBox(view, n.line, n);
+        });
+        del.addEventListener('click', () => removeNote(view, pos()));
+        box.addEventListener('mousedown', (e) => e.preventDefault());
+        box.append(pin, body, meta, del);
+        return box;
+      }
+
+      ignoreEvent() {
+        return true;
+      }
+    }
+    const notedLine = Decoration.line({ class: 'ol-noted' });
+    const noteQuote = Decoration.mark({ class: 'ol-note-quote' });
 
     class EditTailWidget extends WidgetType {
       constructor(ai = false) {
@@ -1467,6 +1706,8 @@
 
     const newLine = Decoration.line({ class: 'ol-edit-new' });
     const aiNewLine = Decoration.line({ class: 'ol-edit-new ol-ai-new' });
+    const diffMark = Decoration.mark({ class: 'ol-diff-new' });
+    const aiDiffMark = Decoration.mark({ class: 'ol-diff-new ol-diff-ai' });
 
     const bodyLine = Decoration.line({ class: 'ol-cand-body' });
 
@@ -1489,6 +1730,32 @@
         const tailFrom = doc.line(block.bodyToLine + 1).from;
         ranges.push(Decoration.replace({ widget: new TailWidget(), block: true }).range(tailFrom, block.to));
       }
+      const notes = parseNotes(doc);
+      const isNote = new Set(notes.map((x) => x.line));
+      const marked = new Set();
+      for (const note of notes) {
+        // Several notes in a row are all about the first line above them.
+        let target = note.line - 1;
+        while (target > 1 && isNote.has(target)) target--;
+        if (!marked.has(target) && !isNote.has(target)) {
+          marked.add(target);
+          ranges.push(notedLine.range(doc.line(target).from));
+        }
+        ranges.push(Decoration.replace({ widget: new NoteWidget(note), block: true }).range(note.from, note.to));
+        // Text the note quotes in double quotes is highlighted where it occurs
+        // in that line, so a long line shows which part the note is about.
+        if (!isNote.has(target)) {
+          const l = doc.line(target);
+          const quotes = [...note.text.matchAll(/"([^"]+)"|\u201c([^\u201d]+)\u201d/g)].map((m) => m[1] || m[2]);
+          for (const q of quotes) {
+            let i = l.text.indexOf(q);
+            while (q && i >= 0) {
+              ranges.push(noteQuote.range(l.from + i, l.from + i + q.length));
+              i = l.text.indexOf(q, i + q.length);
+            }
+          }
+        }
+      }
       const items = reviewItems(doc);
       items.forEach((item, k) => {
         const place = reviewPlace(items.length, k);
@@ -1506,6 +1773,11 @@
         }
         ranges.push(Decoration.replace({ widget: head, block: true }).range(block.from, doc.line(block.newLine).to));
         for (let n = block.newLine + 1; n < block.endLine; n++) ranges.push((block.ai ? aiNewLine : newLine).range(doc.line(n).from));
+        // Changed words of the new text, in a stronger style.
+        const newFrom = doc.line(block.newLine + 1).from;
+        for (const [f, e] of wordDiff(block.oldLines.join('\n'), block.newLines.join('\n')).new) {
+          ranges.push((block.ai ? aiDiffMark : diffMark).range(newFrom + f, newFrom + e));
+        }
         ranges.push(Decoration.replace({ widget: new EditTailWidget(block.ai), block: true }).range(doc.line(block.endLine).from, block.to));
       });
       return Decoration.set(ranges, true);
@@ -1654,6 +1926,31 @@
       '&light .ol-edit-new.ol-ai-new, &light .ol-edit-new.ol-ai-new.cm-activeLine': { background: 'rgba(37, 99, 235, 0.12)' },
       '&dark .ol-edit-new.ol-ai-new, &dark .ol-edit-new.ol-ai-new.cm-activeLine': { background: 'rgba(59, 130, 246, 0.22)' },
       '.ol-edit-tail.ol-ai-tail': { borderLeft: '3px solid #2563eb' },
+      // Notes: a sticky note under the line, which gets a yellow marker.
+      '.ol-noted': { boxShadow: 'inset 3px 0 0 #e0b100' },
+      '.ol-note-quote': { borderRadius: '2px', boxShadow: '0 0 0 1px #e6cf5c' },
+      '&light .ol-note-quote': { background: '#fff4b8' },
+      '&dark .ol-note-quote': { background: '#5a4d10' },
+      '.ol-note': { display: 'flex', alignItems: 'baseline', gap: '6px', margin: '1px 0 3px 18px', padding: '2px 8px',
+        borderRadius: '3px 8px 8px 8px', fontFamily: 'system-ui, "Segoe UI", sans-serif', fontSize: '12px', lineHeight: '1.45',
+        maxWidth: 'calc(100% - 40px)', width: 'fit-content', boxShadow: '1px 2px 4px rgba(0,0,0,0.18)', userSelect: 'none' },
+      '&light .ol-note': { background: '#fff4b8', color: '#3b3000', border: '1px solid #e6cf5c' },
+      '&dark .ol-note': { background: '#5a4d10', color: '#fff6c8', border: '1px solid #8a7520' },
+      '.ol-note-pin': { fontSize: '11px' },
+      '.ol-note-text': { cursor: 'text', whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
+      '.ol-note-meta': { fontSize: '10px', opacity: '0.6', whiteSpace: 'nowrap' },
+      '.ol-note-del': { border: '0', background: 'transparent', color: 'inherit', opacity: '0.5', cursor: 'pointer', padding: '0 2px', fontSize: '13px' },
+      '.ol-note-del:hover': { opacity: '1' },
+      // Changed words: bold on a stronger background.
+      '.ol-diff-old, .ol-diff-new': { fontWeight: '700', borderRadius: '2px' },
+      '&light .ol-diff-old': { background: 'rgba(220, 53, 69, 0.32)' },
+      '&dark .ol-diff-old': { background: 'rgba(220, 53, 69, 0.45)' },
+      '&light .ol-ai-old .ol-diff-old': { background: 'rgba(124, 58, 237, 0.28)' },
+      '&dark .ol-ai-old .ol-diff-old': { background: 'rgba(167, 139, 250, 0.40)' },
+      '&light .ol-diff-new': { background: 'rgba(9, 136, 66, 0.32)' },
+      '&dark .ol-diff-new': { background: 'rgba(9, 136, 66, 0.50)' },
+      '&light .ol-diff-new.ol-diff-ai': { background: 'rgba(37, 99, 235, 0.30)' },
+      '&dark .ol-diff-new.ol-diff-ai': { background: 'rgba(59, 130, 246, 0.45)' },
       '.ol-cand-tail': { height: '3px', borderLeft: '3px solid #098842', opacity: '0.5' },
     });
 
@@ -1669,6 +1966,7 @@
           { key: 'Mod-Shift-i', run: createOrAdd, preventDefault: true },
           { key: 'Mod-Shift-k', run: createEdit, preventDefault: true },
           { key: 'Mod-Shift-u', run: toggleRaw, preventDefault: true },
+          { key: 'Mod-Shift-j', run: addNoteCmd, preventDefault: true },
           { key: 'Mod-Shift-p', run: (v) => (gotoPdf(v), true), preventDefault: true },
           { key: 'Mod-k', run: aiEdit, preventDefault: true },
         ])
