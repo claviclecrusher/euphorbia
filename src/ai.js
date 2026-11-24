@@ -89,6 +89,16 @@ Tools for reading:
 - read_history: earlier parts of a long conversation that are shown summarized.
 When you already know several things you need, request them in the same turn with several tool calls.
 
+The files may contain two kinds of comment blocks that this app manages:
+- %%cand:begin ... %%cand:end: alternative versions (candidates) of a passage that the user is
+  choosing between. The active candidate is plain text and is what compiles; the others are
+  commented out with %| and are not part of the paper. Each %%cand:option line names one.
+- %%edit:begin ... %%edit:end: a change waiting for review. The %- lines are the old text
+  (commented out); the lines between %%edit:new and %%edit:end are the new text and are what
+  compiles. kind="ai" marks your own suggestions; the others were made by people.
+When you read, quote or reason about the paper, use the text that compiles: ignore %| and %-
+lines unless the user asks about the alternatives or the old text.
+
 Each user message starts with its mode:
 - [Mode: edit] When the user asks for a change, make it with propose_edit, one call per change.
   find must be copied exactly from what read_unit or read_file returned (whole lines, without line
