@@ -115,4 +115,4 @@ name *sotetsu* means cycad, after that leafy crown.
 
 ## License
 
-[AGPL-3.0](LICENSE). Formerly *Overleaf Desktop*; updating keeps your settings.
+[AGPL-3.0](LICENSE).
