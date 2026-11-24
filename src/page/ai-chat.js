@@ -641,7 +641,7 @@
     });
     const st = el('span', 'ol-chat-edit-state');
     if (!state) st.textContent = 'pending';
-    else if (state.ok) st.textContent = state.proposalId ? 'suggested (only you see it until you accept)' : 'added for review';
+    else if (state.ok) st.textContent = state.revised ? 'revised the waiting edit' : 'added for review';
     else st.textContent = state.error || 'not applied';
     st.classList.toggle('ok', !!(state && state.ok));
     st.classList.toggle('error', !!(state && !state.ok));
@@ -665,11 +665,10 @@
     const card = el('div', 'ol-chat-edit');
     const head = el('div', 'ol-chat-edit-head');
     const pending = items.some(({ state }) => !state);
-    const proposals = items.every(({ state }) => !state || state.proposalId);
     const n = items.length;
     head.appendChild(el('span', 'ol-chat-edit-count', `\u270e ${n} edit${n === 1 ? '' : 's'}`));
     const st = el('span', 'ol-chat-edit-state');
-    st.textContent = pending ? 'pending' : proposals ? `suggested (only you see ${n === 1 ? 'it' : 'them'} until you accept)` : 'added for review';
+    st.textContent = pending ? 'pending' : 'added for review';
     st.classList.toggle('ok', !pending);
     head.appendChild(st);
     const files = el('div', 'ol-chat-edit-files');
@@ -1006,10 +1005,9 @@
     }
     // AI edits become suggestions kept on this computer until accepted.
     const res = window.__olDesktopEdits
-      ? window.__olDesktopEdits.addProposal({ file: edit.file, find: edit.find, replace: edit.replace, by: state.by || 'AI' })
+      ? await window.__olDesktopEdits.addProposal({ file: edit.file, find: edit.find, replace: edit.replace, by: state.by || 'AI' })
       : { ok: false, error: 'Editor not ready.' };
-    if (res.ok) state.proposalId = res.id;
-    Object.assign(state, { ok: res.ok, error: res.error || null, line: null });
+    Object.assign(state, { ok: res.ok, error: res.error || null, line: res.ok ? res.line : null, revised: !!res.revised });
     save();
     if (card) render();
     return res.ok;

@@ -355,13 +355,21 @@ function unitAtLine(p, f, line) {
 }
 
 // Line ranges of edit and candidates blocks in a text (1-based, inclusive).
+// Blocks as [beginLine, endLine, aiNewFrom, aiNewTo]: for an AI edit block
+// (kind="ai") the lines of its new text, which the AI may still revise.
 function blockRanges(text) {
   const out = [];
   let open = null;
+  let ai = false;
+  let newAt = 0;
   text.split('\n').forEach((l, i) => {
-    if (/^\s*%%(edit|cand):begin\b/.test(l)) open = i + 1;
+    if (/^\s*%%(edit|cand):begin\b/.test(l)) {
+      open = i + 1;
+      ai = /^\s*%%edit:begin\b.*\bkind="ai"/.test(l);
+      newAt = 0;
+    } else if (open && /^\s*%%edit:new\s*$/.test(l)) newAt = i + 1;
     else if (open && /^\s*%%(edit|cand):end\s*$/.test(l)) {
-      out.push([open, i + 1]);
+      out.push(ai && newAt ? [open, i + 1, newAt + 1, i] : [open, i + 1, 0, -1]);
       open = null;
     }
   });
@@ -474,8 +482,15 @@ function workspace(p, openDoc, { embed = null } = {}) {
       }
       const lineFrom = text.slice(0, at).split('\n').length;
       const lineTo = lineFrom + text.slice(at, at + len).split('\n').length - 1;
-      if (blockRanges(text).some(([a, b]) => lineFrom <= b && lineTo >= a)) {
-        return { ok: false, error: 'Those lines are inside an edit or candidates block; leave them alone.' };
+      const hit = blockRanges(text).find(([a, b]) => lineFrom <= b && lineTo >= a);
+      // Inside the new text of an AI edit block: a revision of that suggestion.
+      if (hit && !(hit[2] && lineFrom >= hit[2] && lineTo <= hit[3])) {
+        return {
+          ok: false,
+          error: hit[2]
+            ? 'That touches the markers or the old (%-) lines of a suggested edit. To revise the suggestion, edit only its new text, between %%edit:new and %%edit:end.'
+            : 'Those lines are inside an edit block made by a person or a candidates block; leave them alone.',
+        };
       }
       if (accepted.some((s) => s.file === f.path && lineFrom <= s.to && lineTo >= s.from)) {
         return { ok: false, error: 'This overlaps an edit you already proposed in this answer; combine them into one edit.' };

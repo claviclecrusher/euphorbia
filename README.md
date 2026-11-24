@@ -53,8 +53,11 @@ is loaded when you open a project.
   project. `Ctrl+L` adds the selected lines to the message. Modes:
   **Edit** (may change files), **Read** (answers only), **Search** (highlights
   related places in yellow).
-- **AI suggestions** — AI changes are shown only to you until you **Accept**
-  them; the bar above the editor has **Files**, **Accept all**, **Reject all**.
+- **AI edits** — written into the file as edit blocks like `Ctrl+Shift+K`, with
+  the old text kept as comments and the new text active (so your next compile
+  uses it). Accept or Reject each, or use **Files**, **Accept all**, **Reject all**
+  in the bar above the editor. Ask for more changes while they wait and the AI
+  revises them; it can also compile and read the errors.
 - `.bib` files are read-only for the AI. The AI can compile the project and read
   the errors and warnings (ask it about errors or a broken PDF).
 - A **writing style** for research papers is applied to text the AI writes
