@@ -55,7 +55,8 @@ is loaded when you open a project.
   related places in yellow).
 - **AI suggestions** — AI changes are shown only to you until you **Accept**
   them; the bar above the editor has **Files**, **Accept all**, **Reject all**.
-- `.bib` files are read-only for the AI.
+- `.bib` files are read-only for the AI. The AI can compile the project and read
+  the errors and warnings (ask it about errors or a broken PDF).
 - A **writing style** for research papers is applied to text the AI writes
   (editable in AI Settings). **Claude effort** defaults to low.
 - The label next to the model menu estimates this month's spending from this
