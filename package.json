@@ -1,7 +1,7 @@
 {
   "name": "euphorbia",
   "productName": "Euphorbia",
-  "version": "0.25.1",
+  "version": "0.25.2",
   "description": "Euphorbia: an unofficial desktop client for Overleaf servers (self-hosted Community Edition or overleaf.com)",
   "homepage": "https://github.com/claviclecrusher/euphorbia",
   "main": "src/main.js",
