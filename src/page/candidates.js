@@ -278,6 +278,46 @@
     return out;
   }
 
+  // Word-level difference of an edit block's old and new text: character
+  // ranges [from, to) that changed, in each. Tokens are words, runs of spaces
+  // and single other characters; a longest common subsequence keeps the rest.
+  function wordDiff(a, b) {
+    const tok = (t) => t.match(/[A-Za-z0-9\u00C0-\uFFFF]+|\s+|[^A-Za-z0-9\u00C0-\uFFFF\s]/g) || [];
+    const A = tok(a);
+    const B = tok(b);
+    const n = A.length;
+    const m = B.length;
+    if (!n || !m) return { old: n ? [[0, a.length]] : [], new: m ? [[0, b.length]] : [] };
+    if (n * m > 250000) return { old: [], new: [] }; // too long to compare quickly
+    const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    const out = { old: [], new: [] };
+    const push = (list, from, to) => {
+      const last = list[list.length - 1];
+      if (last && last[1] === from) last[1] = to;
+      else list.push([from, to]);
+    };
+    let i = 0;
+    let j = 0;
+    let pa = 0;
+    let pb = 0;
+    while (i < n || j < m) {
+      if (i < n && j < m && A[i] === B[j]) {
+        pa += A[i++].length;
+        pb += B[j++].length;
+      } else if (j < m && (i >= n || L[i][j + 1] >= L[i + 1][j])) {
+        push(out.new, pb, pb + B[j].length);
+        pb += B[j++].length;
+      } else {
+        push(out.old, pa, pa + A[i].length);
+        pa += A[i++].length;
+      }
+    }
+    // Whitespace-only changes are not worth a highlight.
+    const visible = (t, list) => list.filter(([f, e]) => /\S/.test(t.slice(f, e)));
+    return { old: visible(a, out.old), new: visible(b, out.new) };
+  }
+
   const editAt = (state, pos) => parseEdits(state.doc).find((b) => pos >= b.from && pos <= b.to) || null;
 
   function overlapsAny(doc, from, to) {
@@ -1299,7 +1339,8 @@
         this.k = k;
         this.place = place;
         this.ai = !!block.ai;
-        this.key = `${this.ai}|${this.by}|${this.at}|${this.empty}|${k}|${place.pos}/${place.total}|${this.old.join('\n')}`;
+        this.changed = wordDiff(block.oldLines.join('\n'), block.newLines.join('\n')).old;
+        this.key = `${this.ai}|${this.by}|${this.at}|${this.empty}|${k}|${place.pos}/${place.total}|${this.old.join('\n')}|${JSON.stringify(this.changed)}`;
       }
 
       eq(other) {
@@ -1359,11 +1400,27 @@
         bar.addEventListener('mousedown', (e) => e.preventDefault());
         box.appendChild(bar);
 
+        let at = 0; // offset of this line in the old text
         for (const text of this.old) {
           const line = document.createElement('div');
           line.className = this.ai ? 'ol-edit-old ol-ai-old' : 'ol-edit-old';
-          line.textContent = text || '\u200b';
+          // The changed words of the line, in a stronger style.
+          const parts = this.changed
+            .map(([f, e]) => [Math.max(f, at) - at, Math.min(e, at + text.length) - at])
+            .filter(([f, e]) => e > f);
+          let pos = 0;
+          for (const [f, e] of parts) {
+            if (f > pos) line.appendChild(document.createTextNode(text.slice(pos, f)));
+            const mark = document.createElement('span');
+            mark.className = 'ol-diff-old';
+            mark.textContent = text.slice(f, e);
+            line.appendChild(mark);
+            pos = e;
+          }
+          if (pos < text.length) line.appendChild(document.createTextNode(text.slice(pos)));
+          if (!text) line.textContent = '\u200b';
           box.appendChild(line);
+          at += text.length + 1;
         }
         if (this.empty) {
           const note = document.createElement('div');
@@ -1467,6 +1524,8 @@
 
     const newLine = Decoration.line({ class: 'ol-edit-new' });
     const aiNewLine = Decoration.line({ class: 'ol-edit-new ol-ai-new' });
+    const diffMark = Decoration.mark({ class: 'ol-diff-new' });
+    const aiDiffMark = Decoration.mark({ class: 'ol-diff-new ol-diff-ai' });
 
     const bodyLine = Decoration.line({ class: 'ol-cand-body' });
 
@@ -1506,6 +1565,11 @@
         }
         ranges.push(Decoration.replace({ widget: head, block: true }).range(block.from, doc.line(block.newLine).to));
         for (let n = block.newLine + 1; n < block.endLine; n++) ranges.push((block.ai ? aiNewLine : newLine).range(doc.line(n).from));
+        // Changed words of the new text, in a stronger style.
+        const newFrom = doc.line(block.newLine + 1).from;
+        for (const [f, e] of wordDiff(block.oldLines.join('\n'), block.newLines.join('\n')).new) {
+          ranges.push((block.ai ? aiDiffMark : diffMark).range(newFrom + f, newFrom + e));
+        }
         ranges.push(Decoration.replace({ widget: new EditTailWidget(block.ai), block: true }).range(doc.line(block.endLine).from, block.to));
       });
       return Decoration.set(ranges, true);
@@ -1654,6 +1718,16 @@
       '&light .ol-edit-new.ol-ai-new, &light .ol-edit-new.ol-ai-new.cm-activeLine': { background: 'rgba(37, 99, 235, 0.12)' },
       '&dark .ol-edit-new.ol-ai-new, &dark .ol-edit-new.ol-ai-new.cm-activeLine': { background: 'rgba(59, 130, 246, 0.22)' },
       '.ol-edit-tail.ol-ai-tail': { borderLeft: '3px solid #2563eb' },
+      // Changed words: bold on a stronger background.
+      '.ol-diff-old, .ol-diff-new': { fontWeight: '700', borderRadius: '2px' },
+      '&light .ol-diff-old': { background: 'rgba(220, 53, 69, 0.32)' },
+      '&dark .ol-diff-old': { background: 'rgba(220, 53, 69, 0.45)' },
+      '&light .ol-ai-old .ol-diff-old': { background: 'rgba(124, 58, 237, 0.28)' },
+      '&dark .ol-ai-old .ol-diff-old': { background: 'rgba(167, 139, 250, 0.40)' },
+      '&light .ol-diff-new': { background: 'rgba(9, 136, 66, 0.32)' },
+      '&dark .ol-diff-new': { background: 'rgba(9, 136, 66, 0.50)' },
+      '&light .ol-diff-new.ol-diff-ai': { background: 'rgba(37, 99, 235, 0.30)' },
+      '&dark .ol-diff-new.ol-diff-ai': { background: 'rgba(59, 130, 246, 0.45)' },
       '.ol-cand-tail': { height: '3px', borderLeft: '3px solid #098842', opacity: '0.5' },
     });
 
