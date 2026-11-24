@@ -1,37 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Small icon: an orange disc with Euphorbia 'Sotetsukirin' (괴마옥) in green
-       (top lighter, base darker), tilted 20 degrees clockwise. The plant is cut
-       to a circle centred on the leaf base, inside an orange rim; the tubercle
-       grooves are drawn in the disc colour. -->
+  <!-- Small icon: an orange disc with Euphorbia 'Sotetsukirin' (괴마옥) in green,
+       tilted 20 degrees clockwise. The body runs to the edge of the disc; each
+       tubercle cell and each leaf has its own gradient (light to dark). -->
   <defs>
-    <pattern id="tub" width="92" height="64" patternUnits="userSpaceOnUse" x="20" y="14">
-      <path d="M46 0 L92 32 L46 64 L0 32 Z" fill="none" stroke="#e8892c" stroke-width="11" stroke-linejoin="round"/>
-      <path d="M46 12 L54 24 L46 30 L38 24 Z" fill="#e8892c"/>
-      <path d="M0 44 L8 56 L0 62 L-8 56 Z M92 44 L100 56 L92 62 L84 56 Z" fill="#e8892c"/>
-    </pattern>
-    <linearGradient id="green" gradientUnits="userSpaceOnUse" x1="0" y1="100" x2="0" y2="955">
-      <stop offset="0" stop-color="#5a9a5f"/>
-      <stop offset="0.45" stop-color="#3a7044"/>
+    <linearGradient id="cell" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#6fae66"/>
       <stop offset="1" stop-color="#244a2c"/>
     </linearGradient>
-    <clipPath id="inner"><circle cx="512" cy="340" r="282"/></clipPath>
-    <clipPath id="body"><path d="M512 320 C615 320 676 420 698 560 C722 720 720 860 690 915 C660 955 600 955 512 955 C424 955 364 955 334 915 C304 860 302 720 326 560 C348 420 409 320 512 320 Z"/></clipPath>
+    <linearGradient id="leaf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7cbf6c"/>
+      <stop offset="1" stop-color="#2c5a34"/>
+    </linearGradient>
+    <pattern id="tub" width="92" height="64" patternUnits="userSpaceOnUse" x="20" y="14">
+      <path d="M46 6 L84 32 L46 58 L8 32 Z M0 -26 L38 0 L0 26 L-38 0 Z M92 -26 L130 0 L92 26 L54 0 Z M0 38 L38 64 L0 90 L-38 64 Z M92 38 L130 64 L92 90 L54 64 Z" fill="url(#cell)"/>
+      <path d="M46 12 L53 23 L46 28 L39 23 Z M0 -20 L7 -9 L0 -4 L-7 -9 Z M92 -20 L99 -9 L92 -4 L85 -9 Z M0 44 L7 55 L0 60 L-7 55 Z M92 44 L99 55 L92 60 L85 55 Z" fill="#e8892c" opacity="0.9"/>
+    </pattern>
+    <clipPath id="disc"><circle cx="512" cy="340" r="320"/></clipPath>
   </defs>
   <circle cx="512" cy="512" r="470" fill="#e8892c"/>
   <g transform="rotate(20 512 512)">
     <g transform="translate(512 512) scale(1.4688) translate(-512 -340)">
-      <g clip-path="url(#inner)">
-        <g fill="url(#green)">
-          <path d="M512 320 C615 320 676 420 698 560 C722 720 720 860 690 915 C660 955 600 955 512 955 C424 955 364 955 334 915 C304 860 302 720 326 560 C348 420 409 320 512 320 Z"/>
-          <path d="M494 352 C440 300 370 260 296 238 C376 226 450 262 510 336 Z"/>
-          <path d="M530 352 C584 300 654 260 728 238 C648 226 574 262 514 336 Z"/>
-          <path d="M498 346 C462 276 410 214 350 168 C430 184 486 250 520 334 Z"/>
-          <path d="M526 346 C562 276 614 214 674 168 C594 184 538 250 504 334 Z"/>
-          <path d="M504 342 C484 268 462 196 426 128 C490 170 518 250 524 334 Z"/>
-          <path d="M520 342 C540 268 562 196 598 128 C534 170 506 250 500 334 Z"/>
-          <path d="M512 340 C490 270 492 180 512 100 C532 180 534 270 512 340 Z"/>
-        </g>
+      <g clip-path="url(#disc)">
+        <path d="M512 320 C615 320 676 420 698 560 C722 720 720 860 690 915 C660 955 600 955 512 955 C424 955 364 955 334 915 C304 860 302 720 326 560 C348 420 409 320 512 320 Z" fill="#e8892c"/>
+        <clipPath id="body"><path d="M512 320 C615 320 676 420 698 560 C722 720 720 860 690 915 C660 955 600 955 512 955 C424 955 364 955 334 915 C304 860 302 720 326 560 C348 420 409 320 512 320 Z"/></clipPath>
         <rect x="250" y="300" width="524" height="700" fill="url(#tub)" clip-path="url(#body)"/>
+        <path d="M494 352 C440 300 370 260 296 238 C376 226 450 262 510 336 Z" fill="url(#leaf)"/>
+        <path d="M530 352 C584 300 654 260 728 238 C648 226 574 262 514 336 Z" fill="url(#leaf)"/>
+        <path d="M498 346 C462 276 410 214 350 168 C430 184 486 250 520 334 Z" fill="url(#leaf)"/>
+        <path d="M526 346 C562 276 614 214 674 168 C594 184 538 250 504 334 Z" fill="url(#leaf)"/>
+        <path d="M504 342 C484 268 462 196 426 128 C490 170 518 250 524 334 Z" fill="url(#leaf)"/>
+        <path d="M520 342 C540 268 562 196 598 128 C534 170 506 250 500 334 Z" fill="url(#leaf)"/>
+        <path d="M512 340 C490 270 492 180 512 100 C532 180 534 270 512 340 Z" fill="url(#leaf)"/>
       </g>
     </g>
   </g>
