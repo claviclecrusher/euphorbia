@@ -242,6 +242,24 @@ async function lastUpdated(p) {
   }
 }
 
+// The projects on the server the user can open: [{ id, name, lastUpdated }].
+async function listProjects(serverUrl) {
+  const token = await csrfToken(serverUrl);
+  if (!token) return [];
+  const res = await session.defaultSession.fetch(`${serverUrl}/api/project`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token, Accept: 'application/json' },
+    body: JSON.stringify({ page: { size: 1000 } }),
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data.projects || [])
+    .filter((x) => !x.trashed && !x.archived)
+    .map((x) => ({ id: String(x.id || x._id), name: String(x.name || ''), lastUpdated: x.lastUpdated || '' }))
+    .sort((a, b) => String(b.lastUpdated).localeCompare(String(a.lastUpdated)));
+}
+
 async function refresh(p, { force = false, maxAge = STALE_MS } = {}) {
   if (!force && p.files.length && Date.now() - p.builtAt < maxAge) return p;
   if (p.refreshing) return p.refreshing;
@@ -765,4 +783,4 @@ function summarizeLog(log) {
   return out.join('\n\n');
 }
 
-module.exports = { stateFor, refresh, workspace, summarize, estimateTokens, stats, embedUnits, compileLog, summarizeLog, LIMITS };
+module.exports = { stateFor, refresh, workspace, summarize, estimateTokens, stats, embedUnits, compileLog, summarizeLog, listProjects, LIMITS };

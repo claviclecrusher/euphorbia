@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('euphorbia', {
     chatContinue: (requestId, go) => ipcRenderer.send('ai:chat-continue', requestId, go),
     listEdits: (projectId) => ipcRenderer.invoke('ai:list-edits', projectId),
     usage: (provider) => ipcRenderer.invoke('ai:usage', provider),
+    listProjects: () => ipcRenderer.invoke('ai:list-projects'),
     switchCost: (req) => ipcRenderer.invoke('ai:switch-cost', req),
     sendRef: (ref) => ipcRenderer.send('ai:ref', ref),
     onRef: (callback) => ipcRenderer.on('ai:ref', (_e, ref) => callback(ref)),

@@ -163,6 +163,7 @@
     const conv = currentConv();
     messages = conv ? conv.messages : [];
     showingList = false;
+    if (typeof linkedRow !== 'undefined') renderLinked();
     try {
       localStorage.setItem(KEY, JSON.stringify({ convs, current: currentId }));
     } catch {
@@ -171,6 +172,17 @@
   }
   let showingList = false;
   let pendingRefs = [];
+  // Other projects this conversation refers to: [{ id, name }] (kept on the
+  // conversation; for a new chat until its first message).
+  let pendingLinked = [];
+  const linkedOf = () => (currentConv() ? currentConv().linked || [] : pendingLinked);
+  const setLinked = (list) => {
+    if (currentConv()) {
+      currentConv().linked = list;
+      save();
+    } else pendingLinked = list;
+    renderLinked();
+  };
   let active = null; // { id, el, text }
 
   // -------------------------------------------------------------- Ctrl+L ---
@@ -310,7 +322,69 @@
   history.title = 'Conversations';
   const newChat = el('button', 'ol-chat-icon', '+');
   newChat.title = 'New chat';
-  header.append(toggle, title, reindex, history, newChat);
+  const linkBtn = el('button', 'ol-chat-icon ol-chat-link', '\u2197');
+  linkBtn.title = 'Refer to other projects in this conversation (read only)';
+  header.append(toggle, title, linkBtn, reindex, history, newChat);
+  const linkedRow = el('div', 'ol-chat-linked');
+  const linkMenu = el('div', 'ol-chat-linkmenu');
+  linkMenu.hidden = true;
+
+  function renderLinked() {
+    linkedRow.textContent = '';
+    const list = linkedOf();
+    linkedRow.hidden = !list.length;
+    if (!list.length) return;
+    linkedRow.appendChild(el('span', 'ol-chat-linked-label', 'Also reading:'));
+    for (const r of list) {
+      const chipEl = el('span', 'ol-chat-ref');
+      chipEl.appendChild(el('span', 'ol-chat-linked-name', r.name || r.id));
+      const x = el('button', 'ol-chat-ref-x', '\u00d7');
+      x.type = 'button';
+      x.title = 'Stop referring to this project';
+      x.addEventListener('click', () => setLinked(linkedOf().filter((y) => y.id !== r.id)));
+      chipEl.appendChild(x);
+      linkedRow.appendChild(chipEl);
+    }
+  }
+
+  async function openLinkMenu() {
+    linkMenu.textContent = 'Loading projects\u2026';
+    linkMenu.hidden = false;
+    if (linkMenu.parentElement !== document.body) document.body.appendChild(linkMenu);
+    const r = linkBtn.getBoundingClientRect();
+    linkMenu.style.top = `${r.bottom + 4}px`;
+    linkMenu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 330))}px`;
+    const projects = ((await ai.listProjects()) || []).filter((x) => x.id !== projectId);
+    linkMenu.textContent = '';
+    linkMenu.appendChild(el('div', 'ol-chat-linkmenu-head', 'Refer to other projects (read only, up to 3)'));
+    if (!projects.length) linkMenu.appendChild(el('div', 'ol-chat-linkmenu-empty', 'No other projects on this server.'));
+    for (const p of projects) {
+      const row = el('label', 'ol-chat-linkmenu-item');
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = linkedOf().some((y) => y.id === p.id);
+      box.addEventListener('change', () => {
+        let list = linkedOf().filter((y) => y.id !== p.id);
+        if (box.checked) {
+          if (list.length >= 3) {
+            box.checked = false;
+            return;
+          }
+          list = [...list, { id: p.id, name: p.name }];
+        }
+        setLinked(list);
+      });
+      row.append(box, el('span', '', p.name));
+      linkMenu.appendChild(row);
+    }
+  }
+  linkBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (linkMenu.hidden) openLinkMenu();
+    else linkMenu.hidden = true;
+  });
+  linkMenu.addEventListener('mousedown', (e) => e.stopPropagation());
+  window.addEventListener('mousedown', () => (linkMenu.hidden = true));
   const indexBar = el('div', 'ol-chat-index');
   const list = el('div', 'ol-chat-list');
   const status = el('div', 'ol-chat-status');
@@ -390,7 +464,8 @@
   new ResizeObserver(fitSpend).observe(actions);
   new MutationObserver(fitSpend).observe(spend, { childList: true, characterData: true, subtree: true });
   composer.append(refsRow, input, actions);
-  panel.append(handle, header, indexBar, list, status, composer);
+  panel.append(handle, header, linkedRow, indexBar, list, status, composer);
+  renderLinked();
   for (const b of panel.querySelectorAll('button')) b.type = 'button';
 
   const HEIGHT_KEY = 'ol-desktop-chat-height';
@@ -466,8 +541,10 @@
     if (active) return;
     openConv(null);
     pendingRefs = [];
+    pendingLinked = [];
     render();
     renderRefs();
+    renderLinked();
     setStatus('');
     input.focus();
   });
@@ -800,7 +877,8 @@
       return;
     }
     if (!currentConv()) {
-      const conv = { id: newId(), title: text.replace(/\s+/g, ' ').slice(0, 60), updatedAt: Date.now(), messages: [] };
+      const conv = { id: newId(), title: text.replace(/\s+/g, ' ').slice(0, 60), updatedAt: Date.now(), messages: [], linked: pendingLinked };
+      pendingLinked = [];
       convs.unshift(conv);
       currentId = conv.id;
       messages = conv.messages;
@@ -827,6 +905,7 @@
       projectId,
       history: messages.map((mm) => ({ role: mm.role, content: mm.content, refs: mm.refs, mode: mm.mode, proposals: mm.proposals, hits: mm.hits })),
       mode,
+      linked: linkedOf(),
       openDoc: v ? { path: currentPath(), text: v.state.doc.toString() } : null,
     });
   }
@@ -1113,6 +1192,18 @@
     .ol-chat-edit .ol-chat-ref-link { padding: 0; max-width: 100%; }
     .ol-chat-edit-state { font-size: 10px; opacity: .75; }
     .ol-chat-edit-count { font-weight: 600; }
+    .ol-chat-link { opacity: .55; }
+    .ol-chat-link:hover { opacity: 1; }
+    .ol-chat-linked { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 8px 4px; font-size: 11px; }
+    .ol-chat-linked[hidden] { display: none; }
+    .ol-chat-linked-label { opacity: .65; }
+    .ol-chat-linkmenu { position: fixed; z-index: 2147483000; width: 320px; max-height: 320px; overflow-y: auto; background: #fff; color: #1b222c;
+      border: 1px solid #c9ced6; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.25); padding: 4px 0; font: 12px system-ui, "Segoe UI", sans-serif; }
+    .ol-chat-linkmenu[hidden] { display: none; }
+    .ol-chat-linkmenu-head { padding: 4px 10px 6px; font-weight: 600; border-bottom: 1px solid #e4e7eb; margin-bottom: 2px; }
+    .ol-chat-linkmenu-empty { padding: 6px 10px; opacity: .7; }
+    .ol-chat-linkmenu-item { display: flex; align-items: center; gap: 8px; padding: 4px 10px; cursor: pointer; margin: 0; font-weight: normal; }
+    .ol-chat-linkmenu-item:hover { background: #f1f3f5; }
     .ol-chat-edit-files { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; }
     .ol-chat-edit-files .ol-chat-ref-link { padding: 0; }
     .ol-chat-edit-state.ok { color: #5fd38d; opacity: 1; }

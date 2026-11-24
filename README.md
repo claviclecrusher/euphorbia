@@ -65,6 +65,8 @@ is loaded when you open a project.
   uses it). Accept or Reject each, or use **Files**, **Accept all**, **Reject all**
   in the bar above the editor. Ask for more changes while they wait and the AI
   revises them; it can also compile and read the errors.
+- **Other projects**: the small ↗ in the chat header lets the AI read up to three
+  other projects on the same server in that conversation (read only).
 - `.bib` files are read-only for the AI. The AI can compile the project and read
   the errors and warnings (ask it about errors or a broken PDF).
 - A **writing style** for research papers is applied to text the AI writes
