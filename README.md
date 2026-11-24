@@ -17,8 +17,13 @@ Download from the [latest release](https://github.com/claviclecrusher/euphorbia/
 | Windows, no install | `euphorbia-portable-<version>.exe` | notification |
 | Linux | `euphorbia-<version>.AppImage` | automatic |
 | Debian/Ubuntu | `euphorbia_<version>_amd64.deb` | notification |
+| macOS (Intel and Apple Silicon) | `euphorbia-<version>-mac.dmg` | notification |
 
 The Windows files are not code-signed: on SmartScreen choose **More info → Run anyway**.
+The macOS app is not signed with an Apple developer ID. The first time, open it,
+then go to **System Settings → Privacy & Security** and choose **Open Anyway**
+(or run `xattr -dr com.apple.quarantine /Applications/Euphorbia.app`). New
+versions are announced in the app; download them from the releases page.
 On Ubuntu 24.04+ the AppImage needs `libfuse2` and may need `--no-sandbox`.
 
 ## Features
@@ -78,6 +83,9 @@ subtasks for the local model. Easy questions cost nothing.
     npm start
     npm run release -- --build-only   # installers into dist/
     npm run release -- --draft        # also upload as a draft GitHub release
+
+On a Mac, `npm run dist:mac` builds `dist/euphorbia-<version>-mac.dmg` (universal,
+ad-hoc signed); macOS builds need macOS.
 
 Bump `version` in `package.json` before a release. Icons: edit `build/icon.svg`
 and `build/icon-small.svg`, then run `scripts/render-icons.sh`.

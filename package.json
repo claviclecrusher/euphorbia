@@ -1,7 +1,7 @@
 {
   "name": "euphorbia",
   "productName": "Euphorbia",
-  "version": "0.23.2",
+  "version": "0.24.0",
   "description": "Euphorbia: an unofficial desktop client for Overleaf servers (self-hosted Community Edition or overleaf.com)",
   "homepage": "https://github.com/claviclecrusher/euphorbia",
   "main": "src/main.js",
@@ -11,7 +11,8 @@
     "start": "electron .",
     "dist:linux": "electron-builder --linux AppImage deb --publish never",
     "dist:win": "electron-builder --win nsis portable --publish never",
-    "release": "bash scripts/release.sh"
+    "release": "bash scripts/release.sh",
+    "dist:mac": "electron-builder --mac --publish never"
   },
   "build": {
     "appId": "local.overleaf.desktop",
@@ -62,7 +63,32 @@
     "deb": {
       "artifactName": "euphorbia_${version}_amd64.${ext}"
     },
-    "icon": "build/icon.png"
+    "icon": "build/icon.png",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "artifactName": "euphorbia-${version}-mac.${ext}"
+    },
+    "dmg": {
+      "artifactName": "euphorbia-${version}-mac.${ext}"
+    }
   },
   "devDependencies": {
     "electron": "^33.4.11",

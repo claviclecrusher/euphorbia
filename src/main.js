@@ -443,7 +443,7 @@ function showSetup() {
   setupWindow.loadFile(path.join(__dirname, 'setup.html'));
   setupWindow.on('closed', () => {
     setupWindow = null;
-    if (!mainWindow) app.quit();
+    if (!mainWindow && process.platform !== 'darwin') app.quit();
   });
 }
 
@@ -609,6 +609,13 @@ function buildMenu() {
       ],
     },
   ];
+  if (process.platform === 'darwin') {
+    // macOS: the app menu (About, Hide, Quit) comes first; Quit lives there.
+    const file = template.find((m) => m.label === 'File');
+    if (file) file.submenu = file.submenu.filter((i) => i.role !== 'quit');
+    while (file && file.submenu.length && file.submenu[file.submenu.length - 1].type === 'separator') file.submenu.pop();
+    template.unshift({ role: 'appMenu' });
+  }
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
@@ -678,5 +685,13 @@ if (!app.requestSingleInstanceLock()) {
     updater.init();
   });
 
-  app.on('window-all-closed', () => app.quit());
+  // macOS keeps the app running with no windows; the Dock icon opens one again.
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length) return;
+    if (config.current) createMainWindow();
+    else showSetup();
+  });
 }

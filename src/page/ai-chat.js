@@ -317,7 +317,7 @@
   const composer = el('div', 'ol-chat-composer');
   const refsRow = el('div', 'ol-chat-refs');
   const input = el('textarea', 'ol-chat-input');
-  input.placeholder = 'Ask about the project or request a change. Ctrl+L adds the selected lines.';
+  input.placeholder = `Ask about the project or request a change. ${/Mac/.test(navigator.platform) ? 'Cmd' : 'Ctrl'}+L adds the selected lines.`;
   input.rows = 3;
   const send = el('button', 'ol-chat-send', 'Send');
   // Edit: the model may change the files. Read: it only reads and answers.
