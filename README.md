@@ -41,7 +41,8 @@ On Ubuntu 24.04+ the AppImage needs `libfuse2` and may need `--no-sandbox`.
   and Go to Code Location in PDF (`Ctrl+Shift+P`).
 - **Notes** (`Ctrl+Shift+J`, or right-click → Add Note) — a short note on a line,
   saved as `% comment (author, time): text` under it and shown as a sticky note
-  (click to edit, × to remove). The AI can add notes too, e.g. to show where
+  (click to edit, × to remove). Text in "double quotes" is highlighted in the
+  line in the note colour. The AI can add notes too, e.g. to show where
   something is.
 - **Euphorbia code view** (`Ctrl+Shift+U`, or `%` on the editor toolbar) — show
   candidates and edits as the plain comments they are in the source, and back.

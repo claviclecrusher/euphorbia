@@ -378,7 +378,7 @@
     const input = document.createElement('input');
     input.type = 'text';
     input.spellcheck = false;
-    input.placeholder = note ? 'Edit the note (Enter to save, Esc to cancel)' : 'Note about this line (Enter to add, Esc to cancel)';
+    input.placeholder = note ? 'Edit the note (Enter to save, Esc to cancel)' : 'Note about this line; "quote" a part to highlight it (Enter to add, Esc to cancel)';
     input.value = note ? note.text : '';
     el.appendChild(input);
     const anchor = view.state.doc.line(lineNo);
@@ -1616,6 +1616,7 @@
       }
     }
     const notedLine = Decoration.line({ class: 'ol-noted' });
+    const noteQuote = Decoration.mark({ class: 'ol-note-quote' });
 
     class EditTailWidget extends WidgetType {
       constructor(ai = false) {
@@ -1741,6 +1742,19 @@
           ranges.push(notedLine.range(doc.line(target).from));
         }
         ranges.push(Decoration.replace({ widget: new NoteWidget(note), block: true }).range(note.from, note.to));
+        // Text the note quotes in double quotes is highlighted where it occurs
+        // in that line, so a long line shows which part the note is about.
+        if (!isNote.has(target)) {
+          const l = doc.line(target);
+          const quotes = [...note.text.matchAll(/"([^"]+)"|\u201c([^\u201d]+)\u201d/g)].map((m) => m[1] || m[2]);
+          for (const q of quotes) {
+            let i = l.text.indexOf(q);
+            while (q && i >= 0) {
+              ranges.push(noteQuote.range(l.from + i, l.from + i + q.length));
+              i = l.text.indexOf(q, i + q.length);
+            }
+          }
+        }
       }
       const items = reviewItems(doc);
       items.forEach((item, k) => {
@@ -1914,6 +1928,9 @@
       '.ol-edit-tail.ol-ai-tail': { borderLeft: '3px solid #2563eb' },
       // Notes: a sticky note under the line, which gets a yellow marker.
       '.ol-noted': { boxShadow: 'inset 3px 0 0 #e0b100' },
+      '.ol-note-quote': { borderRadius: '2px', boxShadow: '0 0 0 1px #e6cf5c' },
+      '&light .ol-note-quote': { background: '#fff4b8' },
+      '&dark .ol-note-quote': { background: '#5a4d10' },
       '.ol-note': { display: 'flex', alignItems: 'baseline', gap: '6px', margin: '1px 0 3px 18px', padding: '2px 8px',
         borderRadius: '3px 8px 8px 8px', fontFamily: 'system-ui, "Segoe UI", sans-serif', fontSize: '12px', lineHeight: '1.45',
         maxWidth: 'calc(100% - 40px)', width: 'fit-content', boxShadow: '1px 2px 4px rgba(0,0,0,0.18)', userSelect: 'none' },

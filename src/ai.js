@@ -572,7 +572,7 @@ const NOTE_TOOL = {
     properties: {
       file: { type: 'string', description: 'File path' },
       find: { type: 'string', description: 'Text copied exactly from the line to comment on (unique in the file)' },
-      comment: { type: 'string', description: 'The note, one short sentence' },
+      comment: { type: 'string', description: 'The note, one short sentence. Put the exact part of the line it is about in double quotes ("...") to highlight that part, which helps on long lines.' },
     },
     required: ['file', 'find', 'comment'],
     additionalProperties: false,
