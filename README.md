@@ -84,6 +84,9 @@ subtasks for the local model. Easy questions cost nothing.
     npm run release -- --build-only   # installers into dist/
     npm run release -- --draft        # also upload as a draft GitHub release
 
+On a Mac, `npm run dist:mac` builds `dist/euphorbia-<version>-mac.dmg` (universal,
+ad-hoc signed); macOS builds need macOS.
+
 Bump `version` in `package.json` before a release. Icons: edit `build/icon.svg`
 and `build/icon-small.svg`, then run `scripts/render-icons.sh`.
 
