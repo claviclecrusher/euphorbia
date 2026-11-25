@@ -339,7 +339,10 @@
   newChat.title = 'New chat';
   const linkBtn = el('button', 'ol-chat-icon ol-chat-link', '\u2197');
   linkBtn.title = 'Refer to other projects in this conversation (read only)';
-  header.append(toggle, title, linkBtn, reindex, history, newChat);
+  const folderBtn = el('button', 'ol-chat-icon ol-chat-link', '\u{1F5C0}');
+  folderBtn.title = "Open this project's AI index folder (index.md, summaries)";
+  folderBtn.addEventListener('click', () => ai.openIndexFolder(projectId));
+  header.append(toggle, title, linkBtn, folderBtn, reindex, history, newChat);
   const linkedRow = el('div', 'ol-chat-linked');
   const linkMenu = el('div', 'ol-chat-linkmenu');
   linkMenu.hidden = true;
