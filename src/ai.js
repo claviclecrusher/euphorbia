@@ -1542,6 +1542,17 @@ function init(context) {
     });
   });
 
+  // Opens this project's index folder (index.md, summaries.json) in the file manager.
+  ipcMain.handle('ai:open-index-folder', async (event, projectId) => {
+    if (!fromServer(event) || !/^[0-9a-f]{24}$/.test(String(projectId))) return false;
+    const p = projectIndex.stateFor(ctx.getConfig().current, String(projectId));
+    require('fs').mkdirSync(p.dir, { recursive: true });
+    const md = require('path').join(p.dir, 'index.md');
+    if (require('fs').existsSync(md)) require('electron').shell.showItemInFolder(md);
+    else await require('electron').shell.openPath(p.dir);
+    return true;
+  });
+
   ipcMain.handle('ai:list-projects', async (event) => {
     if (!fromServer(event)) return [];
     try {
