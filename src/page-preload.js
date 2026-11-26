@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('euphorbia', {
     usage: (provider) => ipcRenderer.invoke('ai:usage', provider),
     listProjects: () => ipcRenderer.invoke('ai:list-projects'),
     cite: (req) => ipcRenderer.send('ai:cite', req),
+    grammar: (sentences) => ipcRenderer.invoke('ai:grammar', { sentences }),
     onCiteEvent: (callback) => ipcRenderer.on('ai:cite-event', (_e, ev) => callback(ev)),
     openIndexFolder: (projectId) => ipcRenderer.invoke('ai:open-index-folder', projectId),
     switchCost: (req) => ipcRenderer.invoke('ai:switch-cost', req),

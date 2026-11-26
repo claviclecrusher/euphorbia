@@ -306,6 +306,7 @@ function attachCommonHandlers(win, contents) {
         { label: 'AI Edit…', accelerator: 'CmdOrCtrl+K', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.aiEdit()') },
         { label: 'Add to AI Chat', accelerator: 'CmdOrCtrl+L', registerAccelerator: false, click: act('window.__euphorbiaQuote && window.__euphorbiaQuote()') },
         { label: 'Add Note', accelerator: 'CmdOrCtrl+Shift+J', registerAccelerator: false, click: act('window.__euphorbiaActions.note()') },
+        { label: 'Grammar Check', accelerator: 'CmdOrCtrl+Shift+G', registerAccelerator: false, click: act('window.__euphorbiaGrammarToggle && window.__euphorbiaGrammarToggle()') },
         { label: 'Find Citations…', accelerator: 'CmdOrCtrl+Shift+E', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.cite()') },
         { type: 'separator' },
         { label: 'Go to Code Location in PDF', accelerator: 'CmdOrCtrl+Shift+P', registerAccelerator: false, enabled: inEditor.pdf, click: act('window.__euphorbiaActions.gotoPdf()') }
@@ -547,7 +548,7 @@ ipcMain.handle('servers:save', async (event, items) => {
 // -------------------------------------------------------------------- ipc ---
 
 // Scripts the page preload injects before the page's own scripts run.
-const EARLY_PAGE_SCRIPT = ['candidates.js', 'shortcut-help.js', 'editor-tabs.js', 'ai-chat.js']
+const EARLY_PAGE_SCRIPT = ['candidates.js', 'shortcut-help.js', 'editor-tabs.js', 'ai-chat.js', 'grammar.js']
   .map((f) => fs.readFileSync(path.join(__dirname, 'page', f), 'utf8'))
   .join('\n;\n');
 
