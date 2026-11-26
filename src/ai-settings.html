@@ -119,6 +119,9 @@
       <option value="low">low (default)</option><option value="medium">medium</option><option value="high">high</option>
       <option value="xhigh">xhigh</option><option value="max">max</option></select>
     <div class="note">Used for every Claude request: chat, Ctrl+K and summaries. OpenAI and local models are not affected.</div>
+    <label class="f" for="grammar">Grammar check model</label>
+    <select id="grammar" style="width:100%;padding:6px;font-size:13px;border:1px solid #afb5c0;border-radius:6px"></select>
+    <div class="note">Checks one sentence at a time, without the rest of the paper, so a small fast model is enough. The local model costs nothing.</div>
     <label class="f" for="openalex">OpenAlex API key for Find Citations (optional)</label>
     <input id="openalex" type="password" autocomplete="off" spellcheck="false" placeholder="Without one, searches share a small free daily budget">
     <div class="note">Find Citations searches OpenAlex (openalex.org) for papers; the claims' search terms are sent there. A free key from openalex.org/settings/api gives a larger daily budget.</div>
@@ -233,6 +236,10 @@
     sel.add(new Option('(none: first sentence of each part)', ''));
     for (const c of s.choices || []) sel.add(new Option(c.label, c.id, false, c.id === s.summary));
     if (s.summary && !(s.choices || []).some((c) => c.id === s.summary)) sel.add(new Option(`${s.summary} (not available)`, s.summary, false, true));
+    const gsel = document.getElementById('grammar');
+    gsel.textContent = '';
+    gsel.add(new Option('(default: the local model)', ''));
+    for (const c of s.choices || []) gsel.add(new Option(c.label, c.id, false, c.id === s.grammar));
     document.getElementById('limit').value = s.tokenLimit;
     document.getElementById('effort').value = s.effort || 'low';
     document.getElementById('openalex').value = s.openalexKey || '';
@@ -248,6 +255,7 @@
   function form() {
     const f = {
       summary: document.getElementById('summary').value,
+      grammar: document.getElementById('grammar').value,
       tokenLimit: document.getElementById('limit').value,
       effort: document.getElementById('effort').value,
       openalexKey: document.getElementById('openalex').value,

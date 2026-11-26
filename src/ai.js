@@ -166,6 +166,7 @@ function settings() {
   out.styleEnabled = s.styleEnabled !== false;
   out.effort = EFFORTS.includes(s.effort) ? s.effort : 'low';
   out.openalexKey = typeof s.openalexKey === 'string' ? s.openalexKey : '';
+  out.grammar = typeof s.grammar === 'string' ? s.grammar : '';
   out.style = typeof s.style === 'string' && s.style.trim() ? s.style : DEFAULT_STYLE;
   out.embedding = s.embedding && typeof s.embedding === 'object'
     ? { provider: String(s.embedding.provider || ''), model: String(s.embedding.model || '') }
@@ -204,7 +205,7 @@ function publicSettings() {
   const out = {
     encrypted: safeStorage.isEncryptionAvailable(), summary: s.summary, tokenLimit: s.tokenLimit, embedding: s.embedding, choices: choices(s),
     styleEnabled: s.styleEnabled, style: s.style, defaultStyle: DEFAULT_STYLE, effort: s.effort,
-    auto: autoStatus(s), openalexKey: s.openalexKey,
+    auto: autoStatus(s), openalexKey: s.openalexKey, grammar: s.grammar,
   };
   for (const p of PROVIDERS) {
     out[p] = { models: s[p].models, hasKey: !!openKey(s[p].key), ...(HAS_URL.has(p) ? { baseURL: s[p].baseURL } : {}) };
@@ -223,6 +224,7 @@ function applyForm(form) {
   if (form && typeof form.styleEnabled === 'boolean') next.styleEnabled = form.styleEnabled;
   if (form && EFFORTS.includes(form.effort)) next.effort = form.effort;
   if (form && typeof form.openalexKey === 'string') next.openalexKey = str(form.openalexKey, 200);
+  if (form && typeof form.grammar === 'string') next.grammar = str(form.grammar, 300);
   if (form && typeof form.style === 'string') {
     const st = form.style.replace(/\r\n/g, '\n').slice(0, 20000);
     // The default is stored as '' so that later improvements to it reach the user.
@@ -401,7 +403,7 @@ async function complete(pick, system, messages, signal) {
   }
   const client = openaiClient(pick.s, pick.provider);
   const response = await client.chat.completions.create(
-    { model: pick.model, messages: [{ role: 'system', content: system }, ...messages], ...connectorEffort(pick) },
+    { model: pick.model, messages: [{ role: 'system', content: system }, ...messages], ...connectorEffort(pick), ...(pick.reasoning ? { reasoning_effort: pick.reasoning } : {}) },
     { signal }
   );
   usage.record(pick.provider, pick.model, usage.fromOpenAI(response.usage));
@@ -1500,6 +1502,35 @@ function init(context) {
   ipcMain.on('ai:select', (event, purpose, choiceId) => {
     if (!fromServer(event) || !['edit', 'chat'].includes(purpose)) return;
     if (choices(settings(), { hybrid: purpose === 'chat' }).some((c) => c.id === choiceId)) remember(purpose, choiceId);
+  });
+
+  // Grammar check of single sentences (no project context, for speed). The
+  // model: AI Settings' grammar model, else the local model, else the chat's.
+  const GRAMMAR_PROMPT = `You check sentences from a LaTeX research paper for errors in English grammar, spelling and word usage only. Ignore style, wording you would merely prefer, LaTeX commands, math, citations, labels and references. Each input line is "n: sentence".
+
+Reply with JSON only: {"errors": [{"n": 0, "wrong": "the exact wrong words copied from that sentence (as short as possible)", "fix": "the corrected words", "why": "a few words"}]}. An empty list when the sentences are correct. Be strict about real errors and do not flag correct text.`;
+  ipcMain.handle('ai:grammar', async (event, req) => {
+    if (!fromServer(event) || !req || !Array.isArray(req.sentences)) return { ok: false, error: 'bad request' };
+    try {
+      const s = settings();
+      const list = choices(s);
+      let pick = list.find((c) => c.id === s.grammar) || list.find((c) => c.provider === 'local') || resolve(null, 'chat');
+      if (pick.provider === 'hybrid') pick = list.find((c) => c.provider === 'local') || list[0];
+      pick = { s, ...pick, effort: 'low', reasoning: pick.provider === 'claude' ? undefined : 'low' };
+      const sentences = req.sentences.slice(0, 60).map((x) => String(x).slice(0, 1200));
+      const user = sentences.map((x, i) => `${i}: ${x.replace(/\s+/g, ' ')}`).join('\n');
+      const r = await complete(pick, GRAMMAR_PROMPT, [{ role: 'user', content: user }]);
+      const t = String(r.text || '').replace(/<think>[\s\S]*?<\/think>/g, '');
+      const m = t.match(/\{[\s\S]*\}/);
+      let errors = [];
+      try { errors = m ? JSON.parse(m[0]).errors || [] : []; } catch { errors = []; }
+      errors = errors
+        .filter((e) => e && Number.isInteger(Number(e.n)) && sentences[Number(e.n)] && e.wrong && sentences[Number(e.n)].includes(String(e.wrong)) && String(e.wrong) !== String(e.fix || ''))
+        .map((e) => ({ n: Number(e.n), wrong: String(e.wrong), fix: String(e.fix || ''), why: String(e.why || '').slice(0, 120) }));
+      return { ok: true, errors, model: pick.model };
+    } catch (err) {
+      return { ok: false, error: friendly(err) };
+    }
   });
 
   // Find citations for a selected block (see cite.js).
