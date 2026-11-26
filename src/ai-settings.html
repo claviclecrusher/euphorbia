@@ -15,6 +15,14 @@
     border: 1px solid #afb5c0; border-radius: 6px; font-family: inherit; }
   textarea { height: 64px; resize: vertical; font-family: ui-monospace, monospace; font-size: 12px; }
   .row { display: flex; gap: 6px; align-items: center; }
+  .auto-status { margin-top: 8px; font-size: 12px; }
+  .auto-row { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+  .auto-mark { width: 14px; font-weight: 700; }
+  .auto-mark.ok { color: #098842; } .auto-mark.no { color: #b83a33; }
+  .auto-label { width: 86px; color: #495365; }
+  .auto-val { font-family: ui-monospace, monospace; }
+  .auto-via { font-family: system-ui, sans-serif; color: #6b7280; font-size: 11px; }
+  .auto-summary { margin-top: 6px; font-weight: 600; } .auto-summary.ok { color: #098842; } .auto-summary.no { color: #b83a33; }
   .models { display: flex; flex-direction: column; gap: 4px; }
   .models .model { display: flex; gap: 6px; align-items: center; }
   .models .model input { flex: 1; font-family: ui-monospace, monospace; font-size: 12px; padding: 5px 8px; }
@@ -67,7 +75,7 @@
     <div class="note">Ollama: http://&lt;host&gt;:11434/v1 &middot; LM Studio: http://&lt;host&gt;:1234/v1</div>
     <label class="f">Model</label>
     <input data-k="models" type="text" spellcheck="false" placeholder="e.g. gpt-oss:120b">
-    <div class="note">One local model is used for everything local (chat, summaries, song-1), so the server keeps one model loaded instead of swapping.</div>
+    <div class="note">One local model is used for everything local (chat, summaries, Auto), so the server keeps one model loaded instead of swapping.</div>
     <label class="f">API key (only if the server needs one)</label>
     <div class="row"><input data-k="key" type="password" autocomplete="off" spellcheck="false">
       <span class="state" data-k="state"></span><button class="link" data-a="clear" type="button">Remove</button></div>
@@ -88,6 +96,15 @@
   </fieldset>
 
   <fieldset>
+    <legend>Auto mode</legend>
+    <div class="note">Auto (in the chat's model menu) lets the local model answer first and checks the answer. When it falls short,
+      Claude takes over, sized by difficulty: Haiku (easy), Sonnet (medium) or Opus (hard). Each size uses the Connector's model when
+      it has one with that name (no API cost), else a Claude API model with that name. A missing size is replaced by the next one up.
+      Auto needs the local model and at least one of the three.</div>
+    <div id="auto-status" class="auto-status"></div>
+  </fieldset>
+
+  <fieldset>
     <legend>Chat index and limits</legend>
     <label class="f" for="summary">Summary model (writes the one-line summaries in the project index and of older chat messages)</label>
     <select id="summary" style="width:100%;padding:6px;font-size:13px;border:1px solid #afb5c0;border-radius:6px"></select>
@@ -102,6 +119,9 @@
       <option value="low">low (default)</option><option value="medium">medium</option><option value="high">high</option>
       <option value="xhigh">xhigh</option><option value="max">max</option></select>
     <div class="note">Used for every Claude request: chat, Ctrl+K and summaries. OpenAI and local models are not affected.</div>
+    <label class="f" for="openalex">OpenAlex API key for Find Citations (optional)</label>
+    <input id="openalex" type="password" autocomplete="off" spellcheck="false" placeholder="Without one, searches share a small free daily budget">
+    <div class="note">Find Citations searches OpenAlex (openalex.org) for papers; the claims' search terms are sent there. A free key from openalex.org/settings/api gives a larger daily budget.</div>
     <label class="f" for="limit">Token limit per chat request (paid APIs)</label>
     <input id="limit" type="text" spellcheck="false" placeholder="200000">
     <div class="note">A request that would go over this pauses and asks whether to continue. A first summary pass over this size asks too.</div>
@@ -185,7 +205,22 @@
   const el = (p, k) => fs(p).querySelector(`[data-k="${k}"]`);
   const clear = { claude: false, openai: false, local: false, connector: false };
 
+  function showAuto(a) {
+    const box = document.getElementById('auto-status');
+    if (!box || !a) return;
+    const row = (label, ok, text) => `<div class="auto-row"><span class="auto-mark ${ok ? 'ok' : 'no'}">${ok ? '\u2713' : '\u2717'}</span><span class="auto-label">${label}</span><span class="auto-val">${text}</span></div>`;
+    const tier = (name, t) => row(name, !!t, t ? `${t.model} <span class="auto-via">via ${t.via}</span>` : 'not set up (add a model with this name to the Connector or Claude)');
+    box.innerHTML = [
+      row('Local model', !!a.local, a.local || 'not set up'),
+      tier('Haiku', a.haiku),
+      tier('Sonnet', a.sonnet),
+      tier('Opus', a.opus),
+      `<div class="auto-summary ${a.ok ? 'ok' : 'no'}">${a.ok ? 'Auto is available in the chat\u2019s model menu.' : 'Auto is not available yet.'}</div>`,
+    ].join('');
+  }
+
   function show(s) {
+    showAuto(s.auto);
     for (const p of P) {
       el(p, 'models').value = (s[p].models || []).join('\n');
       el(p, 'key').value = '';
@@ -200,6 +235,7 @@
     if (s.summary && !(s.choices || []).some((c) => c.id === s.summary)) sel.add(new Option(`${s.summary} (not available)`, s.summary, false, true));
     document.getElementById('limit').value = s.tokenLimit;
     document.getElementById('effort').value = s.effort || 'low';
+    document.getElementById('openalex').value = s.openalexKey || '';
     document.getElementById('styleOn').checked = s.styleEnabled !== false;
     document.getElementById('style').value = s.style || '';
     window.__defaultStyle = s.defaultStyle || '';
@@ -214,6 +250,7 @@
       summary: document.getElementById('summary').value,
       tokenLimit: document.getElementById('limit').value,
       effort: document.getElementById('effort').value,
+      openalexKey: document.getElementById('openalex').value,
       embedding: { provider: document.getElementById('embprov').value, model: document.getElementById('embmodel').value },
       styleEnabled: document.getElementById('styleOn').checked,
       style: document.getElementById('style').value,

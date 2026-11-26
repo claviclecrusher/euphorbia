@@ -306,6 +306,7 @@ function attachCommonHandlers(win, contents) {
         { label: 'AI Edit…', accelerator: 'CmdOrCtrl+K', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.aiEdit()') },
         { label: 'Add to AI Chat', accelerator: 'CmdOrCtrl+L', registerAccelerator: false, click: act('window.__euphorbiaQuote && window.__euphorbiaQuote()') },
         { label: 'Add Note', accelerator: 'CmdOrCtrl+Shift+J', registerAccelerator: false, click: act('window.__euphorbiaActions.note()') },
+        { label: 'Find Citations…', accelerator: 'CmdOrCtrl+Shift+E', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.cite()') },
         { type: 'separator' },
         { label: 'Go to Code Location in PDF', accelerator: 'CmdOrCtrl+Shift+P', registerAccelerator: false, enabled: inEditor.pdf, click: act('window.__euphorbiaActions.gotoPdf()') }
       );

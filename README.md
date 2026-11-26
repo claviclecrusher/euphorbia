@@ -56,7 +56,7 @@ On Ubuntu 24.04+ the AppImage needs `libfuse2` and may need `--no-sandbox`.
 
 Set up connections in **File → AI Settings…**: Claude, OpenAI, and/or a local
 OpenAI-compatible server such as Ollama. Keys stay on this computer. The local connection has one model, used for
-everything local (chat, summaries, song-1), so the server never swaps models; it
+everything local (chat, summaries, Auto), so the server never swaps models; it
 is loaded when you open a project.
 
 - **Connector** (optional): Claude Code on your own server as a model, through
@@ -76,6 +76,9 @@ is loaded when you open a project.
   revises them; it can also compile and read the errors.
 - **Other projects**: the small ↗ in the chat header lets the AI read up to three
   other projects on the same server in that conversation (read only).
+- **Find Citations** (`Ctrl+Shift+E` or right-click): statements in the selected
+  text that need a citation, with real papers from OpenAlex; one click adds the
+  BibTeX entry and `\cite{...}`.
 - `.bib` files are read-only for the AI. The AI can compile the project and read
   the errors and warnings (ask it about errors or a broken PDF).
 - A **writing style** for research papers is applied to text the AI writes
@@ -85,10 +88,11 @@ is loaded when you open a project.
 - Optional in AI Settings: a *summary model* (summarizes the project for the
   AI's index) and an *embedding model* (finds related passages, e.g. `bge-m3`).
 
-**song-1** (in the chat's model menu when a local model and Claude are both set
-up): the local model answers and reviews its own answer; if the answer looks weak,
-Claude Opus 5.5 (effort low) takes over, and for hard requests it first plans
-subtasks for the local model. Easy questions cost nothing.
+**Auto** (in the chat's model menu): the local model answers first and reviews its
+answer; if it falls short, Claude takes over, sized by difficulty: Haiku (easy),
+Sonnet (medium), Opus (hard), from the Connector when it has that model, else the
+Claude API. AI Settings → Auto mode shows which models it will use. Easy
+questions cost nothing.
 
 ## Development
 
