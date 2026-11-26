@@ -217,6 +217,153 @@
   }
 
   // Right-click menu: add the selected lines to the chat (as Ctrl+L does).
+  // ----------------------------------------------------- find citations ---
+  // On the selected block: claims that need a citation and real papers for
+  // them (OpenAlex), shown in the AI Chat. The paper's index is the context;
+  // the citations are for the block only.
+  let citing = null;
+  window.__euphorbiaCite = () => {
+    if (PANE !== 1) return false;
+    const v = view();
+    if (!v || citing) return false;
+    const ref = refFromSelection(v);
+    if (!ref) {
+      setStatus('Select the text to find citations for.', true);
+      return true;
+    }
+    if (!(aiOn && panelOpen())) railTab.click();
+    if (!currentConv()) {
+      const conv = { id: newId(), title: `Find citations: ${ref.path}:${ref.startLine}`, updatedAt: Date.now(), messages: [], linked: pendingLinked };
+      pendingLinked = [];
+      convs.unshift(conv);
+      currentId = conv.id;
+      messages = conv.messages;
+    }
+    messages.push({ role: 'user', content: 'Find citations for the selected text.', refs: [ref], mode: 'read', cite: true });
+    save();
+    render();
+    const d = v.state.doc;
+    const first = d.line(ref.startLine);
+    const last = d.line(ref.endLine);
+    citing = { id: Math.random().toString(36).slice(2, 10), ref };
+    setBusy(true);
+    setStatus('Finding citations…');
+    ai.cite({
+      requestId: citing.id,
+      projectId,
+      choiceId: model.value,
+      file: ref.path,
+      block: ref.text,
+      before: d.sliceString(d.line(Math.max(1, first.number - 30)).from, first.from),
+      after: d.sliceString(last.to, d.line(Math.min(d.lines, last.number + 15)).to),
+    });
+    return true;
+  };
+  ai.onCiteEvent((ev) => {
+    if (!citing || ev.id !== citing.id) return;
+    if (ev.type === 'status') return setStatus(ev.text);
+    const ref = citing.ref;
+    citing = null;
+    setBusy(false);
+    if (ev.type === 'error') {
+      setStatus(ev.text, true);
+      return;
+    }
+    const n = ev.claims.reduce((k, c) => k + c.papers.length, 0);
+    const text = ev.claims.length
+      ? `${ev.claims.length} statement(s) in ${ref.path}:${ref.startLine}-${ref.endLine} could use a citation; ${n} paper(s) found on OpenAlex.`
+      : `Nothing in ${ref.path}:${ref.startLine}-${ref.endLine} seems to need a citation.`;
+    messages.push({ role: 'assistant', content: text, by: ev.by, mode: 'read', cites: { file: ref.path, claims: ev.claims, bib: (ev.bibFiles && ev.bibFiles[0]) || (ev.allBib && ev.allBib[0]) || '' } });
+    save();
+    render();
+    setStatus('');
+  });
+
+  // Adds \cite{key} after the statement (inside an existing \cite when one
+  // follows it) and, for a paper not in the .bib yet, its BibTeX entry.
+  async function addCitation(file, quote, paper, bibFile) {
+    if (!paper.inBib) {
+      if (!bibFile) return 'No .bib file in the project; copy the BibTeX instead.';
+      if (!(await openPath(bibFile))) return `Could not open ${bibFile}.`;
+      const vb = view();
+      if (!vb) return 'The editor is not ready.';
+      if (!vb.state.doc.toString().includes(`{${paper.key},`)) {
+        const end = vb.state.doc.length;
+        vb.dispatch({ changes: { from: end, insert: `${end && !vb.state.doc.toString().endsWith('\n') ? '\n' : ''}\n${paper.bibtex}\n` } });
+      }
+      paper.inBib = true;
+    }
+    if (!(await openPath(file))) return `Could not open ${file}.`;
+    const v = view();
+    const all = v.state.doc.toString();
+    const i = all.indexOf(quote);
+    if (i < 0) return 'The statement is no longer in the file.';
+    let at = i + quote.length;
+    const rest = all.slice(at, at + 200);
+    const m = /^\s*~?\\cite[pt]?\{([^}]*)\}/.exec(rest);
+    if (m) {
+      if (m[1].split(',').map((x) => x.trim()).includes(paper.key)) return 'Already cited there.';
+      at += m.index + m[0].length - 1;
+      v.dispatch({ changes: { from: at, insert: `, ${paper.key}` }, selection: { anchor: at }, scrollIntoView: true });
+    } else {
+      // before the sentence's closing punctuation when the quote ends there
+      if (/[.;:,]$/.test(quote)) at -= 1;
+      v.dispatch({ changes: { from: at, insert: `~\\cite{${paper.key}}` }, selection: { anchor: at }, scrollIntoView: true });
+    }
+    return '';
+  }
+
+  function citeCards(msg) {
+    const wrap = el('div', 'ol-cite');
+    const { file, claims, bib } = msg.cites;
+    claims.forEach((c) => {
+      const box = el('div', 'ol-cite-claim');
+      const q = el('button', 'ol-chat-ref-link ol-cite-quote', `\u201c${c.quote.length > 140 ? c.quote.slice(0, 140) + '\u2026' : c.quote}\u201d`);
+      q.type = 'button';
+      q.title = c.why;
+      q.addEventListener('click', async () => {
+        if (!(await openPath(file))) return;
+        const v = view();
+        const i = v.state.doc.toString().indexOf(c.quote);
+        if (i >= 0) { v.dispatch({ selection: { anchor: i, head: i + c.quote.length }, scrollIntoView: true }); v.focus(); }
+      });
+      box.appendChild(q);
+      if (c.why) box.appendChild(el('div', 'ol-cite-why', c.why));
+      if (!c.papers.length) box.appendChild(el('div', 'ol-cite-none', 'No fitting paper among the search results.'));
+      for (const p of c.papers) {
+        const row = el('div', 'ol-cite-paper');
+        const t = el('a', 'ol-cite-title', p.title);
+        t.href = p.doi ? `https://doi.org/${p.doi}` : p.id;
+        t.target = '_blank';
+        row.appendChild(t);
+        row.appendChild(el('div', 'ol-cite-meta', `${p.authors.slice(0, 3).join(', ')}${p.authors.length > 3 ? ' et al.' : ''} \u00b7 ${p.year}${p.venue ? ` \u00b7 ${p.venue}` : ''} \u00b7 cited ${p.cites}`));
+        if (p.why) row.appendChild(el('div', 'ol-cite-why', p.why));
+        const actions = el('div', 'ol-cite-actions');
+        const add = el('button', 'ol-cite-btn', p.inBib ? `Cite (${p.key})` : `Add to ${bib ? bib.split('/').pop() : '.bib'} & cite`);
+        add.type = 'button';
+        add.title = p.inBib ? `Insert \\cite{${p.key}} after the statement` : `Append its BibTeX entry to ${bib || 'the .bib file'} and insert \\cite{${p.key}} after the statement`;
+        add.addEventListener('click', async () => {
+          add.disabled = true;
+          const err = await addCitation(file, c.quote, p, bib);
+          if (err) { setStatus(err, true); add.disabled = false; return; }
+          add.textContent = '\u2713 cited';
+          save();
+        });
+        actions.appendChild(add);
+        if (p.bibtex) {
+          const copy = el('button', 'ol-cite-btn secondary', 'Copy BibTeX');
+          copy.type = 'button';
+          copy.addEventListener('click', () => { navigator.clipboard.writeText(p.bibtex); copy.textContent = 'Copied'; });
+          actions.appendChild(copy);
+        }
+        row.appendChild(actions);
+        box.appendChild(row);
+      }
+      wrap.appendChild(box);
+    });
+    return wrap;
+  }
+
   window.__euphorbiaQuote = () => {
     const v = window.overleaf && window.overleaf.unstable && window.overleaf.unstable.store.get('editor.view');
     if (!v) return false;
@@ -837,6 +984,7 @@
         box.appendChild(editSummary(good.map((g) => ({ edit: edits[g.edit], state: states[g.edit] }))));
       }
     }
+    if (msg.cites) box.appendChild(citeCards(msg));
     // Notes the AI attached: one line with their places.
     const notes = Array.isArray(msg.notes) ? msg.notes : [];
     if (notes.length) {
@@ -1340,6 +1488,19 @@
     .ol-chat-edit .ol-chat-ref-link { padding: 0; max-width: 100%; }
     .ol-chat-edit-state { font-size: 10px; opacity: .75; }
     .ol-chat-edit-count { font-weight: 600; }
+    .ol-cite { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+    .ol-cite-claim { border-left: 3px solid #e0b100; background: rgba(224,177,0,.08); padding: 4px 6px; border-radius: 3px; }
+    .ol-cite-quote { font-style: italic; text-align: left; white-space: normal; padding: 0; }
+    .ol-cite-why { font-size: 10.5px; opacity: .7; margin-top: 1px; }
+    .ol-cite-none { font-size: 11px; opacity: .6; margin-top: 4px; }
+    .ol-cite-paper { margin-top: 6px; padding-top: 5px; border-top: 1px solid rgba(255,255,255,.08); }
+    .ol-cite-title { color: #9cc9ff; font-weight: 600; text-decoration: none; }
+    .ol-cite-title:hover { text-decoration: underline; }
+    .ol-cite-meta { font-size: 10.5px; opacity: .75; }
+    .ol-cite-actions { display: flex; gap: 6px; margin-top: 3px; flex-wrap: wrap; }
+    .ol-cite-btn { font: inherit; font-size: 11px; border: 0; border-radius: 10px; padding: 1px 9px; background: #098842; color: #fff; cursor: pointer; }
+    .ol-cite-btn.secondary { background: rgba(255,255,255,.12); color: inherit; }
+    .ol-cite-btn:disabled { opacity: .6; cursor: default; }
     .ol-chat-notes { border-left-color: #e0b100; background: rgba(224,177,0,.12); }
     .ol-chat-link { opacity: .55; }
     .ol-chat-link:hover { opacity: 1; }

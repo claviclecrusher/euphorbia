@@ -165,6 +165,7 @@ function settings() {
   if (out.summary.startsWith('local:')) out.summary = out.local.models[0] ? `local:${out.local.models[0]}` : '';
   out.styleEnabled = s.styleEnabled !== false;
   out.effort = EFFORTS.includes(s.effort) ? s.effort : 'low';
+  out.openalexKey = typeof s.openalexKey === 'string' ? s.openalexKey : '';
   out.style = typeof s.style === 'string' && s.style.trim() ? s.style : DEFAULT_STYLE;
   out.embedding = s.embedding && typeof s.embedding === 'object'
     ? { provider: String(s.embedding.provider || ''), model: String(s.embedding.model || '') }
@@ -203,7 +204,7 @@ function publicSettings() {
   const out = {
     encrypted: safeStorage.isEncryptionAvailable(), summary: s.summary, tokenLimit: s.tokenLimit, embedding: s.embedding, choices: choices(s),
     styleEnabled: s.styleEnabled, style: s.style, defaultStyle: DEFAULT_STYLE, effort: s.effort,
-    auto: autoStatus(s),
+    auto: autoStatus(s), openalexKey: s.openalexKey,
   };
   for (const p of PROVIDERS) {
     out[p] = { models: s[p].models, hasKey: !!openKey(s[p].key), ...(HAS_URL.has(p) ? { baseURL: s[p].baseURL } : {}) };
@@ -221,6 +222,7 @@ function applyForm(form) {
   if (form && typeof form.summary === 'string') next.summary = str(form.summary, 300);
   if (form && typeof form.styleEnabled === 'boolean') next.styleEnabled = form.styleEnabled;
   if (form && EFFORTS.includes(form.effort)) next.effort = form.effort;
+  if (form && typeof form.openalexKey === 'string') next.openalexKey = str(form.openalexKey, 200);
   if (form && typeof form.style === 'string') {
     const st = form.style.replace(/\r\n/g, '\n').slice(0, 20000);
     // The default is stored as '' so that later improvements to it reach the user.
@@ -1498,6 +1500,42 @@ function init(context) {
   ipcMain.on('ai:select', (event, purpose, choiceId) => {
     if (!fromServer(event) || !['edit', 'chat'].includes(purpose)) return;
     if (choices(settings(), { hybrid: purpose === 'chat' }).some((c) => c.id === choiceId)) remember(purpose, choiceId);
+  });
+
+  // Find citations for a selected block (see cite.js).
+  ipcMain.on('ai:cite', async (event, req) => {
+    if (!fromServer(event) || !req || !/^[0-9a-f]{24}$/.test(String(req.projectId))) return;
+    const id = str(req.requestId, 50);
+    const send = (type, payload = {}) => { if (!event.sender.isDestroyed()) event.sender.send('ai:cite-event', { id, type, ...payload }); };
+    const controller = new AbortController();
+    running.set(`cite:${event.sender.id}`, controller);
+    try {
+      let pick = resolve(str(req.choiceId, 300), 'chat');
+      if (pick.provider === 'hybrid') {
+        const parts = autoParts(pick.s);
+        pick = autoPick(parts, 3) || parts.local;
+      }
+      const p = projectIndex.stateFor(ctx.getConfig().current, String(req.projectId));
+      await projectIndex.refresh(p);
+      let index = '';
+      try { index = projectIndex.workspace(p, null).index; } catch { /* no copy */ }
+      const result = await require('./cite').findCitations({
+        block: String(req.block || '').slice(0, 12000),
+        before: String(req.before || '').slice(-3000),
+        after: String(req.after || '').slice(0, 2000),
+        file: str(req.file, 300),
+        index,
+        files: p.files,
+        apiKey: settings().openalexKey || '',
+        complete: async (system, user) => (await complete(pick, system, [{ role: 'user', content: user }], controller.signal)).text,
+        status: (text) => send('status', { text }),
+      });
+      send('done', { ...result, by: `AI (${pick.model}) + OpenAlex` });
+    } catch (err) {
+      send('error', { text: friendly(err) });
+    } finally {
+      running.delete(`cite:${event.sender.id}`);
+    }
   });
 
   ipcMain.handle('ai:edit', async (event, request) => {

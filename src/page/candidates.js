@@ -1304,6 +1304,7 @@
 
   window.__euphorbiaActions = {
     note: () => { const v = storeView(); return v ? addNoteCmd(v) : false; },
+    cite: () => (window.__euphorbiaCite ? window.__euphorbiaCite() : false),
     candidates: () => { const v = storeView(); return v ? createOrAdd(v) : false; },
     diffEdit: () => { const v = storeView(); return v ? createEdit(v) : false; },
     aiEdit: () => { const v = storeView(); return v ? aiEdit(v) : false; },
@@ -1967,6 +1968,7 @@
           { key: 'Mod-Shift-k', run: createEdit, preventDefault: true },
           { key: 'Mod-Shift-u', run: toggleRaw, preventDefault: true },
           { key: 'Mod-Shift-j', run: addNoteCmd, preventDefault: true },
+          { key: 'Mod-Shift-e', run: () => (window.__euphorbiaCite ? (window.__euphorbiaCite(), true) : false), preventDefault: true },
           { key: 'Mod-Shift-p', run: (v) => (gotoPdf(v), true), preventDefault: true },
           { key: 'Mod-k', run: aiEdit, preventDefault: true },
         ])

@@ -76,6 +76,9 @@ is loaded when you open a project.
   revises them; it can also compile and read the errors.
 - **Other projects**: the small ↗ in the chat header lets the AI read up to three
   other projects on the same server in that conversation (read only).
+- **Find Citations** (`Ctrl+Shift+E` or right-click): statements in the selected
+  text that need a citation, with real papers from OpenAlex; one click adds the
+  BibTeX entry and `\\cite{...}`.
 - `.bib` files are read-only for the AI. The AI can compile the project and read
   the errors and warnings (ask it about errors or a broken PDF).
 - A **writing style** for research papers is applied to text the AI writes

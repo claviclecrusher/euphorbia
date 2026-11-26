@@ -119,6 +119,9 @@
       <option value="low">low (default)</option><option value="medium">medium</option><option value="high">high</option>
       <option value="xhigh">xhigh</option><option value="max">max</option></select>
     <div class="note">Used for every Claude request: chat, Ctrl+K and summaries. OpenAI and local models are not affected.</div>
+    <label class="f" for="openalex">OpenAlex API key for Find Citations (optional)</label>
+    <input id="openalex" type="password" autocomplete="off" spellcheck="false" placeholder="Without one, searches share a small free daily budget">
+    <div class="note">Find Citations searches OpenAlex (openalex.org) for papers; the claims' search terms are sent there. A free key from openalex.org/settings/api gives a larger daily budget.</div>
     <label class="f" for="limit">Token limit per chat request (paid APIs)</label>
     <input id="limit" type="text" spellcheck="false" placeholder="200000">
     <div class="note">A request that would go over this pauses and asks whether to continue. A first summary pass over this size asks too.</div>
@@ -232,6 +235,7 @@
     if (s.summary && !(s.choices || []).some((c) => c.id === s.summary)) sel.add(new Option(`${s.summary} (not available)`, s.summary, false, true));
     document.getElementById('limit').value = s.tokenLimit;
     document.getElementById('effort').value = s.effort || 'low';
+    document.getElementById('openalex').value = s.openalexKey || '';
     document.getElementById('styleOn').checked = s.styleEnabled !== false;
     document.getElementById('style').value = s.style || '';
     window.__defaultStyle = s.defaultStyle || '';
@@ -246,6 +250,7 @@
       summary: document.getElementById('summary').value,
       tokenLimit: document.getElementById('limit').value,
       effort: document.getElementById('effort').value,
+      openalexKey: document.getElementById('openalex').value,
       embedding: { provider: document.getElementById('embprov').value, model: document.getElementById('embmodel').value },
       styleEnabled: document.getElementById('styleOn').checked,
       style: document.getElementById('style').value,
