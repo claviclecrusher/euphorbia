@@ -350,6 +350,12 @@
           save();
         });
         actions.appendChild(add);
+        // Google Scholar search for the title, for its own BibTeX ("Cite" there).
+        const gs = el('button', 'ol-cite-btn secondary', 'Google Scholar');
+        gs.type = 'button';
+        gs.title = 'Open this paper in Google Scholar (use its Cite \u2192 BibTeX there)';
+        gs.addEventListener('click', () => window.open(`https://scholar.google.com/scholar?q=${encodeURIComponent(`"${p.title}"`)}`, '_blank'));
+        actions.appendChild(gs);
         if (p.bibtex) {
           const copy = el('button', 'ol-cite-btn secondary', 'Copy BibTeX');
           copy.type = 'button';
