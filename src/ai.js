@@ -167,6 +167,8 @@ function settings() {
   out.effort = EFFORTS.includes(s.effort) ? s.effort : 'low';
   out.openalexKey = typeof s.openalexKey === 'string' ? s.openalexKey : '';
   out.grammar = typeof s.grammar === 'string' ? s.grammar : '';
+  out.translateModel = typeof s.translateModel === 'string' ? s.translateModel : '';
+  out.translateTo = typeof s.translateTo === 'string' && s.translateTo.trim() ? s.translateTo.trim() : 'Korean';
   out.style = typeof s.style === 'string' && s.style.trim() ? s.style : DEFAULT_STYLE;
   out.embedding = s.embedding && typeof s.embedding === 'object'
     ? { provider: String(s.embedding.provider || ''), model: String(s.embedding.model || '') }
@@ -205,7 +207,7 @@ function publicSettings() {
   const out = {
     encrypted: safeStorage.isEncryptionAvailable(), summary: s.summary, tokenLimit: s.tokenLimit, embedding: s.embedding, choices: choices(s),
     styleEnabled: s.styleEnabled, style: s.style, defaultStyle: DEFAULT_STYLE, effort: s.effort,
-    auto: autoStatus(s), openalexKey: s.openalexKey, grammar: s.grammar,
+    auto: autoStatus(s), openalexKey: s.openalexKey, grammar: s.grammar, translateModel: s.translateModel, translateTo: s.translateTo,
   };
   for (const p of PROVIDERS) {
     out[p] = { models: s[p].models, hasKey: !!openKey(s[p].key), ...(HAS_URL.has(p) ? { baseURL: s[p].baseURL } : {}) };
@@ -225,6 +227,8 @@ function applyForm(form) {
   if (form && EFFORTS.includes(form.effort)) next.effort = form.effort;
   if (form && typeof form.openalexKey === 'string') next.openalexKey = str(form.openalexKey, 200);
   if (form && typeof form.grammar === 'string') next.grammar = str(form.grammar, 300);
+  if (form && typeof form.translateModel === 'string') next.translateModel = str(form.translateModel, 300);
+  if (form && typeof form.translateTo === 'string') next.translateTo = str(form.translateTo, 60);
   if (form && typeof form.style === 'string') {
     const st = form.style.replace(/\r\n/g, '\n').slice(0, 20000);
     // The default is stored as '' so that later improvements to it reach the user.
@@ -1514,6 +1518,25 @@ Reply with JSON only: {"errors": [{"n": 0, "wrong": "the exact wrong words copie
     for (const c of grammarRuns.get(event.sender.id) || []) c.abort();
     grammarRuns.delete(event.sender.id);
   });
+  // Translation of a selected block, shown in the editor only (not saved).
+  ipcMain.handle('ai:translate', async (event, req) => {
+    if (!fromServer(event) || !req || typeof req.text !== 'string') return { ok: false, error: 'bad request' };
+    try {
+      const s = settings();
+      const list = choices(s);
+      let pick = list.find((c) => c.id === s.translateModel) || resolve(null, 'chat');
+      if (pick.provider === 'hybrid') pick = list.find((c) => c.provider === 'local') || list[0];
+      pick = { s, ...pick, reasoning: pick.provider === 'claude' ? undefined : 'low' };
+      const system = `Translate the given part of a LaTeX research paper into ${s.translateTo}. Translate the prose only: leave math, LaTeX commands, \\cite/\\ref/\\label keys and code as they are, and drop % comment lines. Keep the meaning exact and the tone academic. Reply with the translation only.`;
+      const r = await complete(pick, system, [{ role: 'user', content: req.text.slice(0, 20000) }]);
+      const text = cleanOutput(String(r.text || '').replace(/<think>[\s\S]*?<\/think>/g, ''));
+      if (!text.trim()) throw new Error('The model returned an empty answer.');
+      return { ok: true, text, model: pick.model, lang: s.translateTo };
+    } catch (err) {
+      return { ok: false, error: friendly(err) };
+    }
+  });
+
   ipcMain.handle('ai:grammar', async (event, req) => {
     if (!fromServer(event) || !req || !Array.isArray(req.sentences)) return { ok: false, error: 'bad request' };
     const controller = new AbortController();
