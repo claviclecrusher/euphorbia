@@ -1509,8 +1509,16 @@ function init(context) {
   const GRAMMAR_PROMPT = `You check sentences from a LaTeX research paper for errors in English grammar, spelling and word usage only. Ignore style, wording you would merely prefer, LaTeX commands, math, citations, labels and references. Each input line is "n: sentence".
 
 Reply with JSON only: {"errors": [{"n": 0, "wrong": "the exact wrong words copied from that sentence (as short as possible)", "fix": "the corrected words", "why": "a few words"}]}. An empty list when the sentences are correct. Be strict about real errors and do not flag correct text.`;
+  const grammarRuns = new Map(); // sender id -> Set<AbortController>
+  ipcMain.on('ai:grammar-cancel', (event) => {
+    for (const c of grammarRuns.get(event.sender.id) || []) c.abort();
+    grammarRuns.delete(event.sender.id);
+  });
   ipcMain.handle('ai:grammar', async (event, req) => {
     if (!fromServer(event) || !req || !Array.isArray(req.sentences)) return { ok: false, error: 'bad request' };
+    const controller = new AbortController();
+    if (!grammarRuns.has(event.sender.id)) grammarRuns.set(event.sender.id, new Set());
+    grammarRuns.get(event.sender.id).add(controller);
     try {
       const s = settings();
       const list = choices(s);
@@ -1519,7 +1527,7 @@ Reply with JSON only: {"errors": [{"n": 0, "wrong": "the exact wrong words copie
       pick = { s, ...pick, effort: 'low', reasoning: pick.provider === 'claude' ? undefined : 'low' };
       const sentences = req.sentences.slice(0, 60).map((x) => String(x).slice(0, 1200));
       const user = sentences.map((x, i) => `${i}: ${x.replace(/\s+/g, ' ')}`).join('\n');
-      const r = await complete(pick, GRAMMAR_PROMPT, [{ role: 'user', content: user }]);
+      const r = await complete(pick, GRAMMAR_PROMPT, [{ role: 'user', content: user }], controller.signal);
       const t = String(r.text || '').replace(/<think>[\s\S]*?<\/think>/g, '');
       const m = t.match(/\{[\s\S]*\}/);
       let errors = [];
@@ -1529,7 +1537,10 @@ Reply with JSON only: {"errors": [{"n": 0, "wrong": "the exact wrong words copie
         .map((e) => ({ n: Number(e.n), wrong: String(e.wrong), fix: String(e.fix || ''), why: String(e.why || '').slice(0, 120) }));
       return { ok: true, errors, model: pick.model };
     } catch (err) {
-      return { ok: false, error: friendly(err) };
+      return { ok: false, error: friendly(err), cancelled: controller.signal.aborted };
+    } finally {
+      const set = grammarRuns.get(event.sender.id);
+      if (set) set.delete(controller);
     }
   });
 
