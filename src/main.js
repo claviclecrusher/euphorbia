@@ -304,7 +304,7 @@ function attachCommonHandlers(win, contents) {
         { label: 'Candidates', accelerator: 'CmdOrCtrl+Shift+I', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.candidates()') },
         { label: 'Edit with Diff', accelerator: 'CmdOrCtrl+Shift+K', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.diffEdit()') },
         { label: 'AI Edit…', accelerator: 'CmdOrCtrl+K', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.aiEdit()') },
-        { label: 'Add to AI Chat', accelerator: 'CmdOrCtrl+L', registerAccelerator: false, click: act('window.__euphorbiaQuote && window.__euphorbiaQuote()') },
+        { label: 'Add to AI Assistant', accelerator: 'CmdOrCtrl+L', registerAccelerator: false, click: act('window.__euphorbiaQuote && window.__euphorbiaQuote()') },
         { label: 'Add Note', accelerator: 'CmdOrCtrl+Shift+J', registerAccelerator: false, click: act('window.__euphorbiaActions.note()') },
         { label: 'Grammar Check', accelerator: 'CmdOrCtrl+Shift+G', registerAccelerator: false, click: act('window.__euphorbiaGrammarToggle && window.__euphorbiaGrammarToggle()') },
         { label: 'Find Citations…', accelerator: 'CmdOrCtrl+Shift+E', registerAccelerator: false, enabled: sel, click: act('window.__euphorbiaActions.cite()') },

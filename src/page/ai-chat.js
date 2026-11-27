@@ -442,7 +442,7 @@
   const header = el('div', 'ol-chat-header');
   const toggle = el('button', 'ol-chat-icon ol-chat-toggle', '▾');
   toggle.title = 'Collapse';
-  const title = el('span', 'ol-chat-title', 'AI Chat');
+  const title = el('span', 'ol-chat-title', 'Euphorbia AI Assistant');
   const model = el('select', 'ol-chat-model');
   model.title = 'Model';
   // Switching to a paid model in a conversation that already has messages
@@ -1351,8 +1351,8 @@
   const pane = el('div', 'ol-ai-pane');
   const railTab = el('button', 'ide-rail-tab-link nav-link ol-ai-rail-tab');
   railTab.type = 'button';
-  railTab.title = 'AI Chat';
-  railTab.setAttribute('aria-label', 'AI Chat');
+  railTab.title = 'Euphorbia AI Assistant';
+  railTab.setAttribute('aria-label', 'Euphorbia AI Assistant');
   railTab.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.9 5.1L19 9l-5.1 1.9L12 16l-1.9-5.1L5 9l5.1-1.9L12 2zm7 11l.95 2.55L22.5 16.5l-2.55.95L19 20l-.95-2.55-2.55-.95 2.55-.95L19 13zM6 15l.7 1.8 1.8.7-1.8.7L6 20l-.7-1.8-1.8-.7 1.8-.7L6 15z"/></svg>';
 
   const railContent = () => document.querySelector('.ide-rail-content');
@@ -1458,7 +1458,7 @@
     .ol-chat-handle { flex: 0 0 4px; cursor: row-resize; }
     .ol-chat-handle:hover { background: #098842; }
     .ol-chat-header { display: flex; align-items: center; gap: 4px; padding: 4px 6px 4px 4px; }
-    .ol-chat-title { font-weight: 600; font-size: 13px; cursor: pointer; white-space: nowrap; }
+    .ol-chat-title { font-weight: 600; font-size: 13px; cursor: pointer; white-space: nowrap; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .ol-chat-model { flex: 1; min-width: 0; font: inherit; font-size: 11px; color: inherit; background: rgba(255,255,255,.08);
       border: 1px solid rgba(255,255,255,.18); border-radius: 4px; padding: 1px 2px; }
     .ol-chat-model option { color: #1b222c; }

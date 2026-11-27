@@ -37,7 +37,7 @@ On Ubuntu 24.04+ the AppImage needs `libfuse2` and may need `--no-sandbox`.
   or drag a tab to split the editor top/bottom.
 - **Candidates** (`Ctrl+Shift+I`) — keep alternative versions of some lines and
   switch between them; stored as comments in the `.tex` file.
-- **Right-click in the editor**: Candidates, Edit with Diff, AI Edit, Add to AI Chat
+- **Right-click in the editor**: Candidates, Edit with Diff, AI Edit, Add to AI Assistant
   and Go to Code Location in PDF (`Ctrl+Shift+P`).
 - **Notes** (`Ctrl+Shift+J`, or right-click → Add Note) — a short note on a line,
   saved as `% comment (author, time): text` under it and shown as a sticky note
@@ -64,7 +64,7 @@ is loaded when you open a project.
   and models (`connector-opus` …). No API cost; the subscription's limits apply.
   The Claude effort setting applies to it too.
 - **`Ctrl+K`** rewrites the selected lines.
-- **AI Chat** (its own tab in the left bar, after File tree, Search and Chat)
+- **Euphorbia AI Assistant** (its own tab in the left bar, after File tree, Search and Chat)
   answers questions about the whole
   project. `Ctrl+L` adds the selected lines to the message. Modes:
   **Edit** (may change files), **Read** (answers only), **Search** (highlights
