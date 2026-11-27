@@ -215,7 +215,7 @@
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'ol-cm-toolbar-button ol-who-toggle' + (on ? ' active' : '');
-      b.title = 'Identifier: colour the text by who last wrote it (from the project history)';
+      b.title = `Identifier: colour the text by who last wrote it, from the project history (${/Mac/.test(navigator.platform) ? 'Cmd' : 'Ctrl'}+Shift+Y)`;
       b.setAttribute('aria-label', 'Identifier');
       b.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-3.3 0-7 1.6-7 4v2h10.5a6 6 0 0 1-.5-2.5c0-1.2.3-2.3 1-3.2-1.3-.2-2.6-.3-4-.3zm8 0a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>';
       b.addEventListener('mousedown', (e) => e.preventDefault());
@@ -232,6 +232,7 @@
       setMarks = setMarks || StateEffect.define();
       let debounce = null;
       event.detail.extensions.push(
+        CM.Prec.highest(CM.keymap.of([{ key: 'Mod-Shift-y', run: () => toggle(), preventDefault: true }])),
         StateField.define({
           create: () => Decoration.none,
           update(v, tr) {

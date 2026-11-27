@@ -1305,6 +1305,7 @@
   window.__euphorbiaActions = {
     note: () => { const v = storeView(); return v ? addNoteCmd(v) : false; },
     cite: () => (window.__euphorbiaCite ? window.__euphorbiaCite() : false),
+    codeView: () => toggleRaw(),
     candidates: () => { const v = storeView(); return v ? createOrAdd(v) : false; },
     diffEdit: () => { const v = storeView(); return v ? createEdit(v) : false; },
     aiEdit: () => { const v = storeView(); return v ? aiEdit(v) : false; },
