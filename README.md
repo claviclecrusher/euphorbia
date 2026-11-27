@@ -76,6 +76,9 @@ is loaded when you open a project.
   revises them; it can also compile and read the errors.
 - **Other projects**: the small ↗ in the chat header lets the AI read up to three
   other projects on the same server in that conversation (read only).
+- **Translate** (`Ctrl+Shift+L` or right-click): the translation of the selected text
+  appears under it like a note, without changing the file. Target language and
+  model in AI Settings.
 - **Grammar check** (`Ctrl+Shift+G`, `Aa` on the editor toolbar, or right-click): marks
   grammar and spelling errors in red, sentence by sentence (hover for the fix); a
   bar shows the count, ‹ › and × to turn it off; edited sentences are checked

@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('euphorbia', {
     cite: (req) => ipcRenderer.send('ai:cite', req),
     grammar: (sentences) => ipcRenderer.invoke('ai:grammar', { sentences }),
     grammarCancel: () => ipcRenderer.send('ai:grammar-cancel'),
+    translate: (text) => ipcRenderer.invoke('ai:translate', { text }),
     onCiteEvent: (callback) => ipcRenderer.on('ai:cite-event', (_e, ev) => callback(ev)),
     openIndexFolder: (projectId) => ipcRenderer.invoke('ai:open-index-folder', projectId),
     switchCost: (req) => ipcRenderer.invoke('ai:switch-cost', req),
