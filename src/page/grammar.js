@@ -107,6 +107,7 @@
         const b = batches[next++];
         const res = await ai.grammar(b);
         for (const t of b) pending.delete(t);
+        if (!on || (res && res.cancelled)) return;
         if (!res || !res.ok) {
           setText(res && res.error ? `Grammar check failed: ${res.error}` : 'Grammar check failed.');
           continue;
@@ -197,6 +198,9 @@
     if (!on) {
       errors = [];
       note = null;
+      pending.clear();
+      clearTimeout(timer);
+      if (ai.grammarCancel) ai.grammarCancel(); // stop the requests still running
     }
     attachBar();
     paint();
