@@ -8,10 +8,10 @@
   const KEYS = [
     [`${ctrl} + Shift + I`, 'Candidates: turn the selected lines into a candidate block, or add a candidate inside one'],
     [`${ctrl} + K`, 'AI edit: rewrite the selected lines from an instruction; the result is an edit with Accept / Reject (File > AI Settings)'],
-    [`${ctrl} + L`, 'AI chat: open the AI Chat tab and add the selected lines (if any) to the message'],
+    [`${ctrl} + L`, 'AI Assistant: open the Euphorbia AI Assistant tab and add the selected lines (if any) to the message'],
     [`${ctrl} + Shift + K`, 'Edit with diff: keep the selected lines as the old version and edit a copy (Accept / Reject)'],
     [`${ctrl} + Shift + J`, 'Note: attach a short note to the line (a "% comment (author, time): ..." line under it, shown as a sticky note)'],
-    [`${ctrl} + Shift + E`, 'Find citations: statements in the selected text that need a citation, with matching papers from OpenAlex (in the AI Chat)'],
+    [`${ctrl} + Shift + E`, 'Find citations: statements in the selected text that need a citation, with matching papers from OpenAlex (in the AI Assistant)'],
     [`${ctrl} + Shift + G`, 'Grammar check: mark grammar and spelling errors in red as you write (toggle; also on the editor toolbar)'],
     [`${ctrl} + Shift + P`, 'Go to code location in PDF (from the cursor)'],
     [`${ctrl} + Shift + U`, 'Euphorbia code view: show candidates and edits as the comments they are in the source (toggle; also on the editor toolbar)'],
